@@ -1,0 +1,21 @@
+{
+  "name": "outlook-classic-mcp",
+  "owner": {
+    "name": "Anas Shaikh",
+    "url": "https://github.com/anasahmed07"
+  },
+  "metadata": {
+    "description": "Single-plugin marketplace that ships the `outlook` Claude Code plugin — full Microsoft Outlook (classic desktop) integration: mail, calendar, contacts, tasks, categories, rules, OOO."
+  },
+  "plugins": [
+    {
+      "name": "outlook",
+      "source": "./",
+      "description": "Use Microsoft Outlook end-to-end from Claude Code. Bundles the outlook-classic-mcp local MCP server and the operational skill that teaches Claude how to drive it.",
+      "version": "0.2.0",
+      "category": "productivity",
+      "keywords": ["outlook", "email", "calendar", "windows", "mcp"],
+      "homepage": "https://github.com/anasahmed07/Outlook-Classic-MCP"
+    }
+  ]
+}

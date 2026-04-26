@@ -28,7 +28,43 @@ server auto-launches Outlook on its first COM call.
 
 ## Install
 
-### From source (recommended for now)
+Three paths, simplest first.
+
+### Option 1 — Claude Code plugin (recommended for Claude Code users)
+
+The repo doubles as a Claude Code **plugin marketplace**. Installing the plugin registers the MCP server *and* loads the bundled [`outlook` skill](#claude-skill) (an operational reference that teaches Claude how to drive these tools) in one step. The MCP server itself is fetched on demand by `uvx` directly from PyPI — no `git clone`, no `pip install`, no `.venv` to maintain.
+
+Install [`uv`](https://docs.astral.sh/uv/) once if you don't have it:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Open a fresh terminal so PATH refreshes, then in any Claude Code session:
+
+```text
+/plugin marketplace add anasahmed07/Outlook-Classic-MCP
+/plugin install outlook@outlook-classic-mcp
+```
+
+Restart Claude Code (`/quit`, reopen). First call has a one-time 5–15 s pause while `uvx` resolves the package; subsequent calls are instant. Confirm with `outlook_whoami`.
+
+To update later: `/plugin marketplace update outlook-classic-mcp` then `/plugin update outlook@outlook-classic-mcp`. To pull a fresh PyPI release of the server itself: `uv cache clean outlook-classic-mcp`.
+
+### Option 2 — From PyPI with uv (any MCP client)
+
+Works for Claude Desktop, Cursor, Cline, Continue, Windsurf, and Claude Code. The smart client installer registers the server with whichever clients you have.
+
+```bat
+uv pip install --system outlook-classic-mcp
+python -m outlook_mcp.scripts.install_to_clients
+```
+
+(`uv` is Astral's Python installer — see Option 1 above for the one-line install. `--system` writes to your system Python so `python -m outlook_mcp` resolves anywhere; drop the flag if you'd rather install into an active venv.)
+
+Package: <https://pypi.org/project/outlook-classic-mcp/>.
+
+### Option 3 — From source (development)
 
 ```bat
 git clone https://github.com/anasahmed07/Outlook-Classic-MCP.git
@@ -40,16 +76,9 @@ install.bat
 
 1. Install `uv` (Astral's Python installer) if it isn't present.
 2. Create `.venv\` with Python 3.11.
-3. Install the package in editable mode (`pip install -e .`).
+3. Install the package in editable mode (`uv pip install -e .`).
 4. Pre-warm the pywin32 typelib cache.
 5. Launch the smart client installer (next section).
-
-### From PyPI (once published)
-
-```bash
-pip install outlook-classic-mcp
-python -m outlook_mcp.scripts.install_to_clients
-```
 
 ---
 
@@ -94,6 +123,26 @@ Continue, Windsurf.**
 | Rules          | `list_rules`, `toggle_rule` |
 | Out-of-Office  | `get_out_of_office` |
 | Account        | `whoami` — sanity check; shows the bound mailbox |
+
+---
+
+## Claude skill
+
+The repo also ships a Claude **skill** at `skills/outlook/` — a self-contained operational reference that teaches Claude how to drive the `outlook_*` tools correctly: folder reference syntax, the `EntryID` handle pattern, ISO-8601 date conventions, the `Recurrence` object, which calls have side effects to confirm before, and 19 worked recipes for common workflows (triage, drafting replies, weekly digests, scheduling meetings, recurring events, attachment handling, multi-mailbox setups).
+
+Layout:
+
+```
+skills/outlook/
+├── SKILL.md                  # always-loaded operational core
+└── references/               # loaded on demand
+    ├── tools.md              # full per-tool parameter / return-shape reference
+    ├── recipes.md            # worked multi-step workflows
+    ├── gotchas.md            # quirks + failure modes (Programmatic Access prompt, EX:/O= addresses, live rule toggling, sandboxed paths, etc.)
+    └── setup.md              # install instructions an agent can walk a user through when the tools aren't connected yet
+```
+
+Installing the [Claude Code plugin](#option-1--claude-code-plugin-recommended-for-claude-code-users) auto-loads this skill alongside the MCP server. To use the skill in another Claude surface, copy the `skills/outlook/` directory into wherever that surface loads skills from.
 
 ---
 
