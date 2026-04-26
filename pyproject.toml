@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "outloook-classic-mcp"
+name = "outlook-classic-mcp"
 version = "0.2.0"
 description = "Local MCP server for classic Outlook desktop on Windows (COM, no Azure app required)."
 readme = "README.md"

@@ -1,6 +1,6 @@
 @echo off
 REM ---------------------------------------------------------------------
-REM outloook-classic-mcp Windows installer (uv-based)
+REM outlook-classic-mcp Windows installer (uv-based)
 REM
 REM 1. Installs uv (Astral) if missing and uses it to fetch Python.
 REM 2. Creates .venv with Python 3.11.
@@ -21,7 +21,7 @@ set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
 
 echo.
 echo ========================================================================
-echo   outloook-classic-mcp installer
+echo   outlook-classic-mcp installer
 echo   Install location: %INSTALL_DIR%
 echo ========================================================================
 echo.
@@ -66,7 +66,7 @@ if %errorlevel% neq 0 (
 )
 
 REM ---- Install the package in editable mode ----
-echo [3/5] Installing outloook-classic-mcp (editable) and dependencies ...
+echo [3/5] Installing outlook-classic-mcp (editable) and dependencies ...
 uv pip install --python "%PYTHON_EXE%" -e "%INSTALL_DIR%"
 if %errorlevel% neq 0 (
     echo.

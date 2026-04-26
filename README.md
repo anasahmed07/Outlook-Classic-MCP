@@ -47,7 +47,7 @@ install.bat
 ### From PyPI (once published)
 
 ```bash
-pip install outloook-classic-mcp
+pip install outlook-classic-mcp
 python -m outlook_mcp.scripts.install_to_clients
 ```
 
