@@ -1,9 +1,9 @@
 {
   "name": "outlook",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Use Microsoft Outlook (classic desktop) end-to-end from Claude Code — read, search, triage, and send mail; manage calendar events and meeting invites; work with contacts, tasks, color categories, and mail rules; check Out-of-Office. Bundles the outlook-classic-mcp local MCP server and the operational skill that teaches Claude how to drive it.",
   "author": {
-    "name": "Anas Shaikh",
+    "name": "Anas Ahmed Shaikh",
     "url": "https://github.com/anasahmed07/Outlook-Classic-MCP"
   },
   "homepage": "https://github.com/anasahmed07/Outlook-Classic-MCP",
