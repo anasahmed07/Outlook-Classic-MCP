@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -18,11 +21,27 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check if version is new
+        id: version_check
+        run: |
+          VERSION=$(python -c "import tomllib; data=tomllib.load(open('pyproject.toml','rb')); print(data['project']['version'])")
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/outlook-classic-mcp/$VERSION/json")
+          if [ "$STATUS" = "200" ]; then
+            echo "new_version=false" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already exists on PyPI — skipping publish."
+          else
+            echo "new_version=true" >> $GITHUB_OUTPUT
+            echo "Version $VERSION is new — proceeding with publish."
+          fi
+
       - name: Install build tools
+        if: steps.version_check.outputs.new_version == 'true'
         run: pip install build
 
       - name: Build package
+        if: steps.version_check.outputs.new_version == 'true'
         run: python -m build
 
       - name: Publish to PyPI
+        if: steps.version_check.outputs.new_version == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
