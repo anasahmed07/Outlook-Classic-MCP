@@ -89,16 +89,20 @@ def list_events(
 ) -> dict[str, Any]:
     cal = namespace.GetDefaultFolder(OL_FOLDER_CALENDAR)
     items = cal.Items
+    # Outlook requires the collection sorted ascending by [Start] BEFORE
+    # IncludeRecurrences is set, or recurring series expand incorrectly.
+    items.Sort("[Start]")
     if include_recurrences:
         items.IncludeRecurrences = True
-    items.Sort("[Start]")
 
     start_dt = from_iso(start) or dt.datetime.now()
     end_dt = from_iso(end) or (start_dt + dt.timedelta(days=14))
 
+    # Jet filter dates must be 12-hour + AM/PM; %H with %p would emit
+    # e.g. "14:30 PM", which Outlook misparses for afternoon times.
     restrict = (
-        f"[Start] >= '{start_dt.strftime('%m/%d/%Y %H:%M %p')}' AND "
-        f"[Start] <= '{end_dt.strftime('%m/%d/%Y %H:%M %p')}'"
+        f"[Start] >= '{start_dt.strftime('%m/%d/%Y %I:%M %p')}' AND "
+        f"[Start] <= '{end_dt.strftime('%m/%d/%Y %I:%M %p')}'"
     )
     filtered = items.Restrict(restrict)
 

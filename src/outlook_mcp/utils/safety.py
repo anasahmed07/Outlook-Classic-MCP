@@ -14,13 +14,15 @@ logger = logging.getLogger("outlook_mcp.safety")
 def safe_dasl(query: str) -> str:
     """Escape a string for safe inclusion in a DASL ``LIKE`` value.
 
-    DASL uses ``%`` and ``_`` as SQL wildcards and pairs of single/double
-    quotes for escaping. Without this, a search for ``50%_off`` would
-    silently widen to a wildcard search.
+    Quotes are doubled so the query can't break out of the filter
+    string. ``%`` and ``_`` are passed through as-is: they act as SQL
+    wildcards, which at worst *widens* a search. Bracket-escaping them
+    (``[%]``/``[_]``) is Jet syntax only — in DASL the brackets are
+    literal characters, and verified against a live mailbox they make
+    any query containing ``_`` or ``%`` return zero results.
     """
     if query is None:
         return ""
-    query = query.replace("%", "[%]").replace("_", "[_]")
     return query.replace("'", "''").replace('"', '""')
 
 

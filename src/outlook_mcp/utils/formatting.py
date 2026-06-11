@@ -26,9 +26,24 @@ def truncate(text: str | None, limit: int = 500) -> str:
 
 
 def to_iso(value: Any) -> str | None:
-    """Convert a pywintypes/datetime/None to ISO-8601 string."""
+    """Convert a pywintypes/datetime/None to ISO-8601 string.
+
+    Outlook's object model returns datetimes as *local wall-clock* time,
+    but pywin32 attaches a UTC tzinfo to them ("GMT Standard Time"). If
+    we passed that through, a mail received 16:33 local would serialize
+    as 16:33+00:00 and agents would shift it into the wrong timezone.
+    Strip the bogus tzinfo and attach the machine's real local offset
+    (DST-correct for the specific date).
+    """
     if value is None:
         return None
+    if isinstance(value, dt.datetime):
+        try:
+            return value.replace(tzinfo=None).astimezone().isoformat()
+        except (OSError, OverflowError, ValueError):
+            # Outlook sentinel dates (e.g. 4501-01-01 "no date") can fall
+            # outside what astimezone() supports on Windows.
+            return value.replace(tzinfo=None).isoformat()
     try:
         return value.isoformat()
     except AttributeError:
@@ -109,12 +124,16 @@ def _render_collection(data: dict[str, Any]) -> str:
             line = f"- **{c.get('full_name')}**"
             if c.get("email"):
                 line += f" — {c['email']}"
+            if c.get("source") == "directory":
+                line += " _(directory)_"
             lines.append(line)
             if c.get("company") or c.get("job_title"):
                 lines.append(
                     f"  - {c.get('job_title') or ''} @ {c.get('company') or ''}".strip()
                 )
-            lines.append(f"  - id: `{c.get('entry_id')}`")
+            # Directory entries have no Outlook EntryID — skip the id line.
+            if c.get("entry_id"):
+                lines.append(f"  - id: `{c.get('entry_id')}`")
     elif "due_date" in sample:
         for t in items:
             mark = "[x] " if t.get("complete") else "[ ] "
@@ -179,5 +198,12 @@ def _render_detail(data: dict[str, Any]) -> str:
         lines.append("")
         body = data.get("body", "")
         lines.append(body if body else "_(no body)_")
+        if data.get("body_truncated"):
+            lines.append("")
+            lines.append(
+                f"_(body truncated at {len(body)} of "
+                f"{data.get('body_total_chars', '?')} chars — re-call with a "
+                f"higher max_body_chars to read more)_"
+            )
         return "\n".join(lines)
     return "```json\n" + json.dumps(data, indent=2, default=str) + "\n```"

@@ -7,7 +7,7 @@ Every `outlook_*` tool, with parameters, defaults, return shape, and notes on ch
 - [Mail](#mail) — list_mails, search_mails, get_mail, send_mail, reply_mail, forward_mail, move_mail, delete_mail, mark_mail, save_attachments
 - [Folders](#folders) — list_folders, create_folder
 - [Calendar](#calendar) — list_events, get_event, create_event, update_event, delete_event, respond_event
-- [Contacts](#contacts) — list_contacts, search_contacts, get_contact
+- [Contacts](#contacts) — list_contacts, search_contacts, get_contact, resolve_name
 - [Tasks](#tasks) — list_tasks, create_task, complete_task
 - [Categories](#categories) — list_categories, set_category
 - [Rules](#rules) — list_rules, toggle_rule
@@ -42,7 +42,7 @@ Search a single folder by subject/body, subject-only, sender, or raw DASL. Read-
 
 | Param            | Type     | Default          | Notes |
 | ---------------- | -------- | ---------------- | ----- |
-| `query`          | string   | required         | Search text, or a DASL @SQL filter when `scope='dasl'`. |
+| `query`          | string   | required         | Search words (ALL must match, any order) — or a DASL @SQL filter when `scope='dasl'`. |
 | `folder`         | string   | `"inbox"`        | Where to search. |
 | `scope`          | enum     | `"subject_body"` | `subject_body` (default), `subject`, `from`, or `dasl`. |
 | `limit`          | int 1–100| `25`             | |
@@ -50,19 +50,23 @@ Search a single folder by subject/body, subject-only, sender, or raw DASL. Read-
 
 **Returns**: `{ query, scope, folder, count, items: [...] }`. Items have the same summary shape as `list_mails`.
 
+Multi-word queries match items containing **all** the words (not the exact phrase), so `"teams not working"` finds "MESP-1 teams is not working". `scope='from'` matches display name, raw address, **and** the real SMTP address (works for Exchange senders too).
+
 `scope='dasl'` is for power use — pass a complete `@SQL=...` filter and the server applies it raw. Only reach for this when subject_body/subject/from can't express what the user wants.
 
 ### `outlook_get_mail`
 
-Fetch the full body, all headers, and the attachment manifest for one mail. Read-only.
+Fetch the body, all headers, and the attachment manifest for one mail. Read-only.
 
-| Param          | Type   | Default | Notes |
-| -------------- | ------ | ------- | ----- |
-| `entry_id`     | string | required | From a list/search result. |
-| `include_body` | bool   | `true`   | If false, omits `body` and `html_body`. Useful when you only need metadata. |
+| Param            | Type   | Default | Notes |
+| ---------------- | ------ | ------- | ----- |
+| `entry_id`       | string | required | From a list/search result. |
+| `include_body`   | bool   | `true`   | If false, omits `body`. Useful when you only need metadata. |
+| `include_html`   | bool   | `false`  | Adds the raw `html_body`. Usually huge — leave off unless you specifically need the markup. |
+| `max_body_chars` | int ≥0 | `10000`  | Body truncation cap; `0` = unlimited. |
 | `response_format` | str | `markdown` | |
 
-**Returns**: `{ entry_id, conversation_id, subject, from, from_address, to, cc, bcc, received, sent, unread, importance, categories, attachments: [{index, filename, size_bytes}], body, html_body }`.
+**Returns**: `{ entry_id, conversation_id, subject, from, from_address, to, cc, bcc, received, sent, unread, importance, categories, attachments: [{index, filename, size_bytes}], body }` plus `body_truncated`/`body_total_chars` when the cap was hit (re-call with a higher `max_body_chars` to read more) and `html_body` when `include_html=true`.
 
 `attachments[].index` is **1-indexed**; pass it to `save_attachments` to save a single file.
 
@@ -278,7 +282,7 @@ Respond to a meeting invite.
 
 ### `outlook_list_contacts`
 
-List contacts from the default Contacts folder, sorted by full name.
+List saved contacts from **every contact folder in every store**, sorted by full name within each folder.
 
 | Param            | Type     | Default | Notes |
 | ---------------- | -------- | ------- | ----- |
@@ -286,21 +290,36 @@ List contacts from the default Contacts folder, sorted by full name.
 | `offset`         | int ≥0   | `0`     | |
 | `response_format`| str      | `markdown` | |
 
-**Returns**: `{ count, offset, items: [...], has_more }`. Items: `entry_id, full_name, email, company, job_title, mobile`.
+**Returns**: `{ count, offset, items: [...], has_more }`. Items: `entry_id, full_name, email, company, job_title, mobile, folder`.
+
+On corporate accounts the personal contact folders are often nearly empty — colleagues live in the **directory** (Global Address List), which this tool does not list. Use `search_contacts` to find people.
 
 ### `outlook_search_contacts`
 
-Substring search across name, email, company, and job title.
+Word search across saved contacts (name, email, company, job title) **and the org directory (GAL)**. All query words must match.
 
-| Param            | Type    | Default | Notes |
-| ---------------- | ------- | ------- | ----- |
-| `query`          | string  | required | |
-| `limit`          | int 1–100| `25`   | |
-| `response_format`| str     | `markdown` | |
+| Param               | Type    | Default | Notes |
+| ------------------- | ------- | ------- | ----- |
+| `query`             | string  | required | e.g. `"anas shaikh"` matches "Anas Ahmed Shaikh". |
+| `limit`             | int 1–100| `25`   | |
+| `include_directory` | bool    | `true`  | Also scan the Exchange Global Address List. A few seconds on large directories. |
+| `response_format`   | str     | `markdown` | |
+
+**Returns**: `{ query, count, items, searched_directory }`. Each item has `source: "contacts" | "directory"`. Directory items carry `full_name, email (SMTP), company, job_title, mobile` but **no `entry_id`** — they aren't Outlook items, so don't pass them to `get_contact`.
 
 ### `outlook_get_contact`
 
-Full contact record. Returns the summary fields plus `business_phone, home_phone, address, notes`.
+Full contact record (saved contacts only — needs an `entry_id`). Returns the summary fields plus `business_phone, home_phone, address, notes`.
+
+### `outlook_resolve_name`
+
+Resolve a display name, alias, or address to its SMTP address — same mechanism as typing a name in To: and pressing Ctrl+K. Use before sending when you only know a person's name.
+
+| Param  | Type   | Default | Notes |
+| ------ | ------ | ------- | ----- |
+| `name` | string | required | Full names resolve best; short fragments are often ambiguous. |
+
+**Returns**: `{ resolved: true, query, display_name, smtp_address }` or `{ resolved: false, query, note }`. Ambiguous names do **not** resolve — fall back to `search_contacts` to browse candidates.
 
 ---
 
@@ -390,7 +409,7 @@ There is **no tool to enable, disable, or schedule OOO**. Tell users to manage i
 
 ### `outlook_whoami`
 
-Returns the bound user and the list of accounts: `{ current_user, accounts: [{display_name, smtp_address, user_name, account_type}, ...] }`. Useful as a sanity check when the user has multiple mailboxes or you want to confirm which mailbox you're acting on.
+Returns the bound user, the account list, and the user's timezone: `{ current_user, accounts: [{display_name, smtp_address, user_name, account_type}, ...], local_time, timezone, utc_offset }`. Useful as a sanity check when the user has multiple mailboxes, and as the authority on what timezone all returned datetimes are in.
 
 ---
 
@@ -400,7 +419,7 @@ Returns the bound user and the list of accounts: `{ current_user, accounts: [{di
 - `conversation_id` — groups mails in a thread. Same value across replies/forwards in one conversation.
 - `from` — display name of the sender.
 - `from_address` — sender address. **For Exchange senders, this is an `EX:/O=...` distinguished name, not SMTP.** Match by substring.
-- `received` / `sent` / `start` / `end` / `due_date` — ISO-8601 strings.
+- `received` / `sent` / `start` / `end` / `due_date` — ISO-8601 strings **in the user's local timezone with explicit offset** (e.g. `2026-06-10T16:33:22+05:00`). Present as-is; never convert to another timezone.
 - `unread` — bool. Note `mark_mail` returns `unread` (not `read`).
 - `importance` — integer (0=low, 1=normal, 2=high).
 - `categories` — comma-separated string of category names; empty string = none.

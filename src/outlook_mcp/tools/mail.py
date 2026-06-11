@@ -103,12 +103,37 @@ def register(mcp, bridge) -> None:
     @safe_call
     async def outlook_get_mail(
         entry_id: Annotated[str, Field(min_length=1, description="EntryID of the mail item.")],
-        include_body: Annotated[bool, Field(description="Include full body + HTML body.")] = True,
+        include_body: Annotated[bool, Field(description="Include the plain-text body.")] = True,
+        include_html: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Also include the raw HTML body. Off by default — it is "
+                    "usually huge and rarely needed; the plain-text body "
+                    "carries the same content."
+                ),
+            ),
+        ] = False,
+        max_body_chars: Annotated[
+            int,
+            Field(
+                ge=0,
+                description="Truncate the body beyond this many chars (0 = no limit).",
+            ),
+        ] = 10000,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
     ) -> str:
-        """Fetch full body, headers, and attachment list for one mail item."""
+        """Fetch body, headers, and attachment list for one mail item.
+
+        If the response has body_truncated=true, re-call with a higher
+        max_body_chars to read more.
+        """
         data = await bridge.call(
-            mail_client.get_mail, entry_id=entry_id, include_body=include_body
+            mail_client.get_mail,
+            entry_id=entry_id,
+            include_body=include_body,
+            include_html=include_html,
+            max_body_chars=max_body_chars,
         )
         return format_response(data, response_format)
 

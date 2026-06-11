@@ -2,7 +2,7 @@
 
 Read this file when the user wants to use Outlook from Claude (or another MCP-aware agent) but the `outlook_*` tools aren't available in the session yet — meaning the underlying integration isn't installed.
 
-This file walks an agent through helping the user install **`outlook-classic-mcp`**, the local MCP server that exposes classic Outlook desktop to MCP clients. After install, the user restarts their MCP client (Claude Desktop, Claude Code, Cursor, Cline, Continue, or Windsurf) and the `outlook_*` tools will appear.
+This file walks an agent through helping the user install **`outlook-classic-mcp`**, the local MCP server that exposes classic Outlook desktop to MCP clients. After install, the user restarts their MCP client (Claude Code, Claude Desktop, Cowork, VS Code / Copilot agent mode, Cursor, Cline, Continue, Windsurf, or any other MCP-aware agent) and the `outlook_*` tools will appear.
 
 ## Prerequisites — verify these first
 
@@ -15,9 +15,9 @@ Ask the user to confirm each one. If any answer is no, stop and address that bef
 
 The user does **not** need to have Outlook open before install; the integration auto-launches Outlook on its first call.
 
-## Install path A — Claude Code plugin (simplest, recommended)
+## Install path A — agent plugin (simplest, recommended)
 
-If the user is on Claude Code, the whole repo ships as a Claude Code **plugin** (single-plugin marketplace). Installing the plugin registers both the MCP server *and* this skill in one step. The MCP server itself is fetched and run on demand by `uvx` directly from PyPI ([outlook-classic-mcp](https://pypi.org/project/outlook-classic-mcp/)) — no `pip install`, no `git clone`, no `.venv` to maintain.
+The whole repo ships as a **plugin** (single-plugin marketplace). The format started in Claude Code and is also supported by other agents (Cowork, Copilot, Cursor, etc.) — if the user's agent supports plugins, point its plugin install flow at `anasahmed07/Outlook-Classic-MCP`. Installing the plugin registers both the MCP server *and* this skill in one step. The MCP server itself is fetched and run on demand by `uvx` directly from PyPI ([outlook-classic-mcp](https://pypi.org/project/outlook-classic-mcp/)) — no `pip install`, no `git clone`, no `.venv` to maintain. The slash commands below are Claude Code's; other agents have their own equivalent.
 
 ### Prereq: `uv` on PATH
 
@@ -71,9 +71,9 @@ If the user can't or won't install uv, edit the plugin's `mcpServers` entry (the
 
 …and have them `pip install outlook-classic-mcp` once. Functionally identical; loses the venv isolation that `uvx` gives you for free.
 
-## Install path B — from PyPI (non-Claude-Code clients, or when plugin install isn't available)
+## Install path B — from PyPI (when plugin install isn't available)
 
-For Cursor, Cline, Continue, Windsurf, Claude Desktop, or anywhere else, install the package directly from PyPI using `uv`:
+For any other MCP client — Cursor, Cline, Continue, Windsurf, Claude Desktop, VS Code / Copilot agent mode, or anywhere else — install the package directly from PyPI using `uv`:
 
 ```bat
 uv pip install --system outlook-classic-mcp
@@ -85,24 +85,6 @@ The second command auto-detects which MCP clients are installed and registers th
 `--system` writes to the system Python install so `python -m outlook_mcp` resolves anywhere; drop the flag if the user is installing into an active venv. If they don't have `uv` yet, refer them to path A above for the one-line installer.
 
 The package is published at https://pypi.org/project/outlook-classic-mcp/ — `uv pip install` should always succeed on a Windows machine with Python 3.10+.
-
-## Install path C — from source
-
-```bat
-git clone https://github.com/anasahmed07/Outlook-Classic-MCP.git
-cd Outlook-Classic-MCP
-install.bat
-```
-
-`install.bat` does, in order:
-
-1. Installs `uv` (Astral's Python installer) if it isn't already present.
-2. Creates a `.venv` with Python 3.11.
-3. Installs the package in editable mode (`pip install -e .`).
-4. Pre-warms the pywin32 typelib cache.
-5. Launches the smart client installer (next section).
-
-The whole thing is unattended after they answer the client-selection menu.
 
 ## Registering with MCP clients
 
@@ -120,6 +102,17 @@ Type a number to toggle, 'a' to select all, 'n' for none,
 ```
 
 Supported clients: Claude Desktop, Claude Code, Cursor, Cline, Continue, Windsurf. The installer deep-merges the right entry into each config file (and runs `claude mcp add` for Claude Code), snapshotting any existing config to `<file>.bak` first. Re-running it is idempotent — it updates existing entries instead of duplicating.
+
+For clients the installer doesn't know (e.g. VS Code / Copilot agent mode), add the standard stdio entry to the client's MCP config manually:
+
+```json
+"outlook": {
+  "command": "uvx",
+  "args": ["--from", "outlook-classic-mcp", "outlook-mcp"]
+}
+```
+
+(under `mcpServers` in most clients; VS Code's `mcp.json` calls the top-level key `servers`.)
 
 ## After install — making the tools appear
 

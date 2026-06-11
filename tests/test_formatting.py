@@ -1,8 +1,28 @@
 """Tests for utils.formatting — markdown renderers + helpers."""
 
+import datetime as dt
 import json
 
-from outlook_mcp.utils.formatting import format_response, truncate
+from outlook_mcp.utils.formatting import format_response, to_iso, truncate
+
+
+def test_to_iso_relabels_fake_utc_as_local():
+    # pywin32 hands us Outlook's local wall-clock time tagged as UTC.
+    # The wall-clock value must be preserved and get the real local offset.
+    fake_utc = dt.datetime(2026, 6, 10, 16, 33, 22, tzinfo=dt.timezone.utc)
+    expected = dt.datetime(2026, 6, 10, 16, 33, 22).astimezone()
+    assert to_iso(fake_utc) == expected.isoformat()
+    assert "16:33:22" in to_iso(fake_utc)
+
+
+def test_to_iso_naive_gets_local_offset():
+    naive = dt.datetime(2026, 1, 5, 9, 0, 0)
+    assert to_iso(naive) == naive.astimezone().isoformat()
+
+
+def test_to_iso_handles_none_and_str():
+    assert to_iso(None) is None
+    assert to_iso("2026-01-01") == "2026-01-01"
 
 
 def test_truncate_short_passthrough():

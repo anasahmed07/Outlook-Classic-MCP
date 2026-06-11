@@ -14,7 +14,15 @@ Almost always **Outlook's Programmatic Access security setting** silently blocki
 
 Exchange senders' `from_address` is **not an SMTP address**. It's an `EX:/O=ExchangeLabs/OU=...` distinguished name. The substring filter on `list_mails` matches against this raw string, which won't contain the SMTP address.
 
-**Fix**: pass a name fragment that *will* appear in the DN — usually the user's first name, last name, or company alias. `from_address="sarah"` is far more reliable than `from_address="sarah@example.com"`. Or use `outlook_search_mails(scope="from", query="sarah")` which matches both the from-name and from-email fields via DASL.
+**Fix**: use `outlook_search_mails(scope="from", query="sarah@example.com")` — since v0.2.5 the `from` scope also matches the real SMTP address (via the MAPI sender-SMTP property), so it works for Exchange senders. For `list_mails`'s `from_address` filter, pass a name fragment that *will* appear in the DN — usually the first or last name.
+
+## Times look wrong / shifted by a few hours
+
+All datetimes the integration returns are in the **user's local timezone with an explicit UTC offset** (e.g. `2026-06-10T16:33:22+05:00`). Present them as-is — do **not** convert them to UTC or any other timezone. `outlook_whoami` reports the user's timezone name, current local time, and offset if you need to reason about it.
+
+## "Search doesn't find the email I described"
+
+`outlook_search_mails` matches items containing **all** the query words in any order — not the exact phrase, and not fuzzy. If a multi-word query misses, drop to the one or two most distinctive words. Keep in mind it searches **one folder at a time** (default: inbox) — check Sent or other folders explicitly if relevant.
 
 ## Toggling a rule changed the user's actual mail flow before they confirmed
 
@@ -81,6 +89,10 @@ outlook_set_category(entry_id=entry_id, categories=new_value)
 
 To **clear** all categories, pass an empty string.
 
+## "Find Sarah's email address" returns nothing
+
+On corporate accounts the personal Contacts folder is usually **empty** — colleagues live in the org directory (Global Address List). `outlook_search_contacts` searches both saved contacts and the directory (`include_directory=true` by default; directory hits have `source: "directory"` and no `entry_id`). For a direct name→address lookup, `outlook_resolve_name` is faster and authoritative; if it reports not-resolved the name was ambiguous — try the full name or fall back to `search_contacts`.
+
 ## "It says my category 'Urgent' doesn't exist."
 
 `outlook_set_category` doesn't validate the names against the profile's defined categories. If you set a category that isn't defined, Outlook will accept the string but the item won't get the color and the user won't see a recognizable tag in the UI.
@@ -103,6 +115,12 @@ Relative paths like `Documents/file.pdf` always fail. Always pass `C:\\Users\\<u
 ## First call of the session takes 5–10 seconds
 
 Outlook's COM surface needs to warm up the first time. Subsequent calls are fast. **Don't retry** as if the slow first call had failed; you'll just queue up duplicate sends.
+
+## The user closed Outlook mid-session
+
+Fine since v0.2.5: the integration detects the lost COM connection on the next call, relaunches OUTLOOK.EXE, reconnects, and retries that call automatically. Expect that one call to take 15–30 seconds (cold Outlook start) instead of failing. **Don't retry it yourself** while it's in flight — you'd queue duplicate operations.
+
+If the call still errors with "could not be relaunched", Outlook genuinely failed to start (crash-recovery dialog, profile prompt, pending update). Tell the user to open Outlook manually, then retry.
 
 ## "Outlook is open but the integration says it isn't ready"
 

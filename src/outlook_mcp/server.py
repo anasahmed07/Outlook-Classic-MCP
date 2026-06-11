@@ -24,7 +24,8 @@ Tool categories (all prefixed `outlook_`):
   - Mail: list, search, get, send, reply, forward, move, delete, mark, save_attachments
   - Folders: list_folders, create_folder
   - Calendar: list_events, get_event, create_event, update_event, delete_event, respond_event
-  - Contacts: list_contacts, search_contacts, get_contact
+  - Contacts: list_contacts, search_contacts (incl. org directory/GAL),
+    get_contact, resolve_name (name -> SMTP address)
   - Tasks: list_tasks, create_task, complete_task
   - Categories: list_categories, set_category
   - Rules: list_rules, toggle_rule  (modifies live mail rules — confirm first)
@@ -34,6 +35,11 @@ Tool categories (all prefixed `outlook_`):
 Most read tools accept response_format='markdown' (default) or 'json'.
 Item references use Outlook EntryID strings; list tools return them on
 every item — pass them back to detail/edit/delete tools.
+
+All datetimes are in the USER'S LOCAL timezone with an explicit UTC
+offset (e.g. 2026-06-10T16:33:22+05:00). Present them as-is — do NOT
+convert to another timezone. outlook_whoami reports the timezone name
+and current local time.
 """
 
 

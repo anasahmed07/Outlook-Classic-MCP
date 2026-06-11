@@ -12,7 +12,7 @@ from typing import Any
 import pythoncom
 
 from outlook_mcp.constants import DEFAULT_FOLDER_MAP, OL_FOLDER_INBOX
-from outlook_mcp.errors import OutlookError
+from outlook_mcp.errors import OutlookError, is_disconnect_error
 
 
 def _safe_get(item: Any, attr: str, default: Any = None) -> Any:
@@ -75,6 +75,10 @@ def get_item_by_id(namespace: Any, entry_id: str, store_id: str | None = None) -
             return namespace.GetItemFromID(entry_id, store_id)
         return namespace.GetItemFromID(entry_id)
     except pythoncom.com_error as exc:
+        if is_disconnect_error(exc):
+            # Outlook itself is gone, not the item — let the bridge see
+            # the raw COM error so it reconnects and retries.
+            raise
         raise OutlookError(
             f"Item with id '{entry_id}' not found. The id may be stale or "
             "the item may have been deleted."

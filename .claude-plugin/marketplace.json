@@ -5,14 +5,14 @@
     "url": "https://github.com/anasahmed07"
   },
   "metadata": {
-    "description": "Single-plugin marketplace that ships the `outlook` Claude Code plugin — full Microsoft Outlook (classic desktop) integration: mail, calendar, contacts, tasks, categories, rules, OOO."
+    "description": "Single-plugin marketplace that ships the `outlook` agent plugin (Claude Code, Cowork, Copilot, Cursor, and other plugin-compatible agents) — full Microsoft Outlook (classic desktop) integration: mail, calendar, contacts, tasks, categories, rules, OOO."
   },
   "plugins": [
     {
       "name": "outlook",
       "source": "./",
-      "description": "Use Microsoft Outlook end-to-end from Claude Code. Bundles the outlook-classic-mcp local MCP server and the operational skill that teaches Claude how to drive it.",
-      "version": "0.2.4",
+      "description": "Use Microsoft Outlook end-to-end from your agent. Bundles the outlook-classic-mcp local MCP server and the operational skill that teaches the agent how to drive it.",
+      "version": "0.2.5",
       "category": "productivity",
       "keywords": ["outlook", "email", "calendar", "windows", "mcp"],
       "homepage": "https://github.com/anasahmed07/Outlook-Classic-MCP"
