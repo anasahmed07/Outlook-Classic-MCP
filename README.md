@@ -1,5 +1,7 @@
 # outlook-classic-mcp
 
+![outlook-classic-mcp banner](src/public/outlook-classic-mcp-banner.png)
+
 A local **MCP (Model Context Protocol) server** that exposes the **classic
 Outlook desktop client** — mail, folders, calendar, contacts, tasks, color
 categories, mail rules, and Out-of-Office status — to any MCP-aware
