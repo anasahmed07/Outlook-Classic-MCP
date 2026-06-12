@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Outlook — Mail reader</title>
+<!--%COMMON%-->
+<style>
+  .mailhead { padding: 14px 16px 12px; border-bottom: 1px solid var(--border); }
+  .msubj { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .fromline { display: flex; gap: 11px; align-items: flex-start; }
+  .fromline .who { flex: 1; min-width: 0; }
+  .actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .body {
+    padding: 16px; white-space: pre-wrap; word-break: break-word; font-size: 13.2px;
+  }
+  .attchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="error"></div>
+  <div id="mail" class="scroll" style="max-height:560px">
+    <div class="empty"><div class="spinner"></div></div>
+  </div>
+  <div class="statusbar"><span id="status">Connecting…</span><span id="updated"></span></div>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let mail = null;
+let confirmDelete = false;
+
+MCPApp.onToolResult(r => {
+  if (r.isError) {
+    const txt = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+    $("error").innerHTML = '<div class="banner">' + esc(txt || "Something went wrong.") + "</div>";
+    $("mail").innerHTML = "";
+    return;
+  }
+  const d = MCPApp.data(r);
+  if (!d || !d.entry_id) return;
+  mail = d;
+  render();
+  showStatus($("status"), "Ready");
+  $("updated").textContent = "Updated " + nowClock();
+});
+
+function render() {
+  const d = mail;
+  const atts = (d.attachments || []).map(a =>
+    '<span class="chip">' + icon("clip", 12) + " " + esc(a.filename) +
+    ' <span class="faint">' + fmtSize(a.size_bytes) + "</span></span>").join("");
+  $("mail").innerHTML =
+    '<div class="mailhead fade-in">' +
+      '<h2 class="msubj">' + esc(d.subject || "(no subject)") + "</h2>" +
+      '<div class="fromline">' + avatarHtml(d.from || d.from_address, 36) +
+        '<div class="who">' +
+          "<div><b>" + esc(d.from || "") + '</b> <span class="muted">&lt;' + esc(d.from_address || "") + "&gt;</span></div>" +
+          '<div class="muted">to ' + esc(d.to || "") + (d.cc ? " · cc " + esc(d.cc) : "") + "</div>" +
+          '<div class="faint" style="font-size:11.5px">' + esc(fmtWhen(d.received)) +
+            (d.unread ? ' · <span style="color:var(--accent)">unread</span>' : "") +
+            (d.flagged ? ' · <span style="color:var(--danger)">flagged</span>' : "") + "</div>" +
+        "</div>" +
+        '<div class="actions">' +
+          '<button class="btn ghost iconbtn" id="readBtn" title="' + (d.unread ? "Mark read" : "Mark unread") + '">' +
+            icon(d.unread ? "mailOpen" : "mail", 14) + "</button>" +
+          '<button class="btn ghost iconbtn' + (d.flagged ? " on" : "") + '" id="flagBtn" title="Toggle flag">' + icon("flag", 14) + "</button>" +
+          '<button class="btn ghost iconbtn danger" id="delBtn" title="Delete">' +
+            (confirmDelete ? "Sure?" : icon("trash", 14)) + "</button>" +
+        "</div>" +
+      "</div>" +
+      (atts ? '<div class="attchips">' + atts + "</div>" : "") +
+    "</div>" +
+    '<div class="body fade-in">' + linkify(d.body || "(no body)") +
+      (d.body_truncated ? '<div class="muted" style="margin-top:10px">(truncated — ask the assistant for the rest)</div>' : "") +
+    "</div>";
+  $("readBtn").addEventListener("click", () => act("read"));
+  $("flagBtn").addEventListener("click", () => act("flag"));
+  $("delBtn").addEventListener("click", () => act("del"));
+}
+
+async function act(kind) {
+  try {
+    if (kind === "read") {
+      const r = await MCPApp.callTool("outlook_mark_mail", { entry_id: mail.entry_id, read: mail.unread });
+      const d = MCPApp.data(r);
+      mail.unread = d && typeof d.unread === "boolean" ? d.unread : !mail.unread;
+    } else if (kind === "flag") {
+      const r = await MCPApp.callTool("outlook_mark_mail", { entry_id: mail.entry_id, flagged: !mail.flagged });
+      const d = MCPApp.data(r);
+      mail.flagged = d && typeof d.flagged === "boolean" ? d.flagged : !mail.flagged;
+    } else if (kind === "del") {
+      if (!confirmDelete) { confirmDelete = true; render(); return; }
+      await MCPApp.callTool("outlook_delete_mail", { entry_id: mail.entry_id });
+      MCPApp.updateModelContext("User deleted the mail “" + (mail.subject || "(no subject)") + "” via the reader view.");
+      $("mail").innerHTML = '<div class="empty"><div class="big">🗑️</div>Mail deleted.</div>';
+      return;
+    }
+    confirmDelete = false;
+    render();
+  } catch (e) {
+    $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+  }
+}
+
+function fmtSize(b) {
+  if (b == null) return "";
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b / 1024).toFixed(0) + " KB";
+  return (b / 1048576).toFixed(1) + " MB";
+}
+
+MCPApp.init({ name: "outlook-mail-view", version: "1.0.0" })
+  .then(() => showStatus($("status"), "Waiting for data…"))
+  .catch(e => showStatus($("status"), "Host handshake failed: " + e.message));
+</script>
+</body>
+</html>

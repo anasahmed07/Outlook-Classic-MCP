@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Outlook — Calendar</title>
+<!--%COMMON%-->
+<style>
+  .dayhead {
+    padding: 10px 14px 5px; font-size: 12px; font-weight: 600;
+    color: var(--text2); text-transform: uppercase; letter-spacing: .5px;
+    position: sticky; top: 0; background: var(--bg); z-index: 2;
+  }
+  .dayhead.today { color: var(--accent); }
+  .event {
+    display: flex; gap: 0; margin: 4px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--card); overflow: hidden;
+    cursor: pointer; transition: border-color .12s, box-shadow .12s;
+  }
+  .event:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+  .event .bar { width: 4px; flex-shrink: 0; }
+  .event .timecol {
+    flex: 0 0 78px; padding: 9px 0 9px 12px; font-size: 12px; color: var(--text2);
+  }
+  .event .timecol .st { color: var(--text); font-weight: 600; font-size: 12.5px; }
+  .event .main { flex: 1; min-width: 0; padding: 9px 12px 9px 4px; }
+  .event .subj { font-weight: 600; font-size: 13.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .event .where { display: flex; align-items: center; gap: 4px; color: var(--text2); font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .event .marks { display: flex; align-items: center; gap: 6px; padding-right: 12px; color: var(--text3); }
+  .details {
+    margin: 0 12px 8px; padding: 10px 14px; border: 1px solid var(--border);
+    border-top: none; border-radius: 0 0 var(--radius) var(--radius);
+    background: var(--bg2); font-size: 12.5px;
+  }
+  .details .att { display: flex; align-items: center; gap: 7px; margin: 3px 0; }
+  .details .resp { margin-left: auto; font-size: 11px; color: var(--text3); }
+  .details .evbody { white-space: pre-wrap; word-break: break-word; margin-top: 8px; color: var(--text2); }
+  .event.open { border-radius: var(--radius) var(--radius) 0 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toolbar">
+    <div class="tb-title">📅 <span>Calendar</span> <span class="muted" id="range"></span></div>
+    <div class="tb-actions">
+      <button class="btn ghost iconbtn" id="refreshBtn" title="Refresh"></button>
+    </div>
+  </div>
+  <div id="error"></div>
+  <div id="agenda" class="scroll" style="max-height:500px">
+    <div class="empty"><div class="spinner"></div></div>
+  </div>
+  <div class="statusbar"><span id="status">Connecting…</span><span id="updated"></span></div>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let events = [];
+let toolArgs = {};
+let openId = null;           // expanded event
+const detailCache = {};      // entry_id -> detail dict
+
+$("refreshBtn").innerHTML = icon("refresh", 15);
+
+MCPApp.onToolInput(p => { toolArgs = (p && p.arguments) || {}; });
+MCPApp.onToolResult(r => {
+  if (r.isError) {
+    const txt = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+    $("error").innerHTML = '<div class="banner">' + esc(txt || "Something went wrong.") + "</div>";
+    $("agenda").innerHTML = "";
+    return;
+  }
+  const d = MCPApp.data(r);
+  if (!d || !Array.isArray(d.items)) return;
+  load(d);
+});
+
+function load(d) {
+  events = d.items.slice().sort((a, b) => String(a.start).localeCompare(String(b.start)));
+  $("error").innerHTML = "";
+  const fmtD = iso => { const x = new Date(iso); return isNaN(x) ? "" : MONTHS[x.getMonth()] + " " + x.getDate(); };
+  if (d.start && d.end) $("range").textContent = fmtD(d.start) + " – " + fmtD(d.end);
+  showStatus($("status"), d.count + " event" + (d.count === 1 ? "" : "s"));
+  $("updated").textContent = "Updated " + nowClock();
+  render();
+}
+
+function dur(ev) {
+  const a = new Date(ev.start), b = new Date(ev.end);
+  if (isNaN(a) || isNaN(b)) return "";
+  const mins = Math.round((b - a) / 60000);
+  if (mins >= 1440) return Math.round(mins / 1440 * 10) / 10 + "d";
+  if (mins >= 60) return (mins % 60 ? (mins / 60).toFixed(1) : (mins / 60)) + "h";
+  return mins + "m";
+}
+
+function render() {
+  if (!events.length) {
+    $("agenda").innerHTML = '<div class="empty"><div class="big">🗓️</div>No events in this range.</div>';
+    return;
+  }
+  const groups = new Map();   // yyyy-mm-dd -> events
+  for (const ev of events) {
+    const key = String(ev.start).slice(0, 10);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ev);
+  }
+  let html = "";
+  for (const [day, evs] of groups) {
+    const heading = fmtDayHeading(day + "T00:00:00");
+    html += '<div class="dayhead' + (heading === "Today" ? " today" : "") + '">' + esc(heading) + "</div>";
+    for (const ev of evs) {
+      const hue = nameHue(ev.subject);
+      const open = ev.entry_id === openId;
+      html += '<div class="event fade-in' + (open ? " open" : "") + '" data-id="' + esc(ev.entry_id) + '">' +
+        '<div class="bar" style="background:hsl(' + hue + ' 55% 52%)"></div>' +
+        '<div class="timecol">' +
+          (ev.all_day ? '<span class="st">All day</span>'
+            : '<span class="st">' + esc(fmtClock(new Date(ev.start))) + "</span><br>" + esc(dur(ev))) +
+        "</div>" +
+        '<div class="main">' +
+          '<div class="subj">' + esc(ev.subject || "(no subject)") + "</div>" +
+          ((ev.location || ev.organizer)
+            ? '<div class="where">' +
+                (ev.location ? icon("pin", 11) + " " + esc(ev.location) + " " : "") +
+                (ev.organizer ? '<span class="faint">· ' + esc(ev.organizer) + "</span>" : "") +
+              "</div>"
+            : "") +
+        "</div>" +
+        '<div class="marks">' + (ev.is_recurring ? icon("recur", 13) : "") + "</div>" +
+      "</div>";
+      if (open) html += renderDetails(ev);
+    }
+  }
+  $("agenda").innerHTML = html;
+}
+
+function renderDetails(ev) {
+  const d = detailCache[ev.entry_id];
+  if (!d) return '<div class="details"><div class="spinner"></div></div>';
+  const atts = (d.attendees || []).map(a =>
+    '<div class="att">' + avatarHtml(a.name, 20) + " " + esc(a.name || a.address || "") +
+    '<span class="resp">' + esc(respLabel(a.response)) + "</span></div>").join("");
+  const body = (d.body || "").trim();
+  return '<div class="details fade-in">' +
+    (atts ? "<div><b>Attendees</b></div>" + atts : '<div class="muted">No attendee list.</div>') +
+    (body ? '<div class="evbody">' + linkify(body.length > 700 ? body.slice(0, 700) + "…" : body) + "</div>" : "") +
+  "</div>";
+}
+
+function respLabel(code) {
+  // olResponseStatus: 0 none, 1 organizer, 2 tentative, 3 accepted, 4 declined, 5 not responded
+  return ({ 1: "organizer", 2: "tentative", 3: "accepted", 4: "declined", 5: "no reply" })[code] || "";
+}
+
+$("agenda").addEventListener("click", async ev => {
+  const card = ev.target.closest(".event");
+  if (!card) return;
+  const id = card.dataset.id;
+  if (openId === id) { openId = null; render(); return; }
+  openId = id;
+  render();
+  if (!detailCache[id]) {
+    try {
+      const r = await MCPApp.callTool("outlook_get_event", { entry_id: id });
+      const d = MCPApp.data(r);
+      if (d) detailCache[id] = d;
+    } catch (e) {
+      detailCache[id] = { body: "Could not load details: " + e.message };
+    }
+    if (openId === id) render();
+  }
+});
+
+$("refreshBtn").addEventListener("click", async () => {
+  showStatus($("status"), "Refreshing…");
+  try {
+    const r = await MCPApp.callTool("outlook_list_events", toolArgs);
+    const d = MCPApp.data(r);
+    if (d && Array.isArray(d.items)) load(d);
+  } catch (e) {
+    $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+    showStatus($("status"), "Error");
+  }
+});
+
+MCPApp.init({ name: "outlook-calendar", version: "1.0.0" })
+  .then(() => showStatus($("status"), "Waiting for data…"))
+  .catch(e => showStatus($("status"), "Host handshake failed: " + e.message));
+</script>
+</body>
+</html>

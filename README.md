@@ -135,6 +135,45 @@ server entry in its MCP config:
 
 ---
 
+## MCP Apps — interactive UI in the chat
+
+Since v0.3.0 the server implements the [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview)
+(SEP-1865): read tools ship a self-contained HTML view that supporting
+hosts (Claude, Claude Desktop, VS Code Copilot, Goose, Postman, …)
+render in a sandboxed iframe right inside the conversation — instead of
+a wall of text you get a real inbox, agenda, or contact list. Hosts
+without MCP Apps support are unaffected and keep getting the usual
+markdown.
+
+![mail list MCP App](src/public/mcp-app-mail-list.png)
+
+| View | Rendered by | What you can do in it |
+| ---- | ----------- | --------------------- |
+| Mail list | `list_mails`, `search_mails` | open mails in a reading pane, mark read/unread, flag, delete, filter unread, refresh |
+| Mail reader | `get_mail` | full body + attachment list, mark, flag, delete |
+| Calendar agenda | `list_events` | day-grouped agenda, expand an event for attendees + body, refresh |
+| Contacts | `list_contacts`, `search_contacts` | live search (incl. org directory), copy addresses |
+| Tasks | `list_tasks` | complete tasks, quick-add new ones, show completed, refresh |
+
+![calendar MCP App](src/public/mcp-app-calendar.png)
+
+The views are plain inline HTML/CSS/JS (no build step, no external
+CDNs — the sandbox CSP blocks those anyway), follow the host's
+light/dark theme, and talk back over the standard `postMessage`
+JSON-RPC dialect: buttons in the UI call the same `outlook_*` tools the
+model uses, and in-app actions (delete, complete, …) are reported back
+into the model's context so the conversation stays in sync.
+
+Technically: each UI tool carries `_meta.ui.resourceUri` pointing at a
+`ui://outlook/*.html` resource (mime `text/html;profile=mcp-app`) and
+returns markdown for the model **plus** `structuredContent` for the
+app. To preview the views without an MCP host:
+`python scripts/preview_ui.py`, then open
+`.ui-preview/harness.html?view=mail-list` (any view name, optional
+`&theme=dark`) in a browser.
+
+---
+
 ## Agent skill
 
 The repo also ships an agent **skill** at `skills/outlook/` (standard Agent Skills format — works in Claude Code, Cowork, Copilot, Cursor, and other agents that load skills) — a self-contained operational reference that teaches the agent how to drive the `outlook_*` tools correctly: folder reference syntax, the `EntryID` handle pattern, ISO-8601 date conventions, the `Recurrence` object, which calls have side effects to confirm before, and 19 worked recipes for common workflows (triage, drafting replies, weekly digests, scheduling meetings, recurring events, attachment handling, multi-mailbox setups).

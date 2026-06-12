@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from outlook_mcp.bridge import OutlookBridge
 from outlook_mcp.tools import register_all
+from outlook_mcp.ui import register_ui
 
 INSTRUCTIONS = """\
 This MCP server gives you full access to Microsoft Outlook desktop on
@@ -52,4 +53,5 @@ def build_server() -> tuple[FastMCP, OutlookBridge]:
     mcp = FastMCP("outlook_mcp", instructions=INSTRUCTIONS)
     bridge = OutlookBridge()
     register_all(mcp, bridge)
+    register_ui(mcp)
     return mcp, bridge

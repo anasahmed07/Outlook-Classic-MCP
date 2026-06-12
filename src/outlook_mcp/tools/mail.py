@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
+from mcp.types import CallToolResult
 from pydantic import Field
 
 from outlook_mcp.client import mail as mail_client
+from outlook_mcp.ui import ui_meta, ui_result
 from outlook_mcp.utils.formatting import format_response
 from outlook_mcp.utils.safety import safe_call
 
@@ -21,6 +23,8 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        meta=ui_meta("mail-list"),
+        structured_output=False,
     )
     @safe_call
     async def outlook_list_mails(
@@ -40,7 +44,7 @@ def register(mcp, bridge) -> None:
         until: Annotated[Optional[str], Field(description="ISO-8601 upper bound on ReceivedTime.")] = None,
         from_address: Annotated[Optional[str], Field(description="Substring match on sender email.")] = None,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """List mail items from a folder, newest first."""
         data = await bridge.call(
             mail_client.list_mails,
@@ -52,7 +56,7 @@ def register(mcp, bridge) -> None:
             until=until,
             from_address=from_address,
         )
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_search_mails",
@@ -63,6 +67,8 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        meta=ui_meta("mail-list"),
+        structured_output=False,
     )
     @safe_call
     async def outlook_search_mails(
@@ -79,7 +85,7 @@ def register(mcp, bridge) -> None:
         ] = "subject_body",
         limit: Annotated[int, Field(ge=1, le=100)] = 25,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """Search a mail folder by subject, body, or sender."""
         data = await bridge.call(
             mail_client.search_mails,
@@ -88,7 +94,7 @@ def register(mcp, bridge) -> None:
             limit=limit,
             scope=scope,
         )
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_get_mail",
@@ -99,6 +105,8 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        meta=ui_meta("mail-view"),
+        structured_output=False,
     )
     @safe_call
     async def outlook_get_mail(
@@ -122,7 +130,7 @@ def register(mcp, bridge) -> None:
             ),
         ] = 10000,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """Fetch body, headers, and attachment list for one mail item.
 
         If the response has body_truncated=true, re-call with a higher
@@ -135,7 +143,7 @@ def register(mcp, bridge) -> None:
             include_html=include_html,
             max_body_chars=max_body_chars,
         )
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_send_mail",

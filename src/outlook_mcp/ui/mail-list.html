@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Outlook — Mail</title>
+<!--%COMMON%-->
+<style>
+  #split { display: flex; min-height: 120px; }
+  #listcol { flex: 1; min-width: 0; }
+  #pane { display: none; border-left: 1px solid var(--border); }
+  /* wide hosts: side-by-side reading pane */
+  .split-open #listcol { flex: 0 0 46%; max-width: 46%; }
+  .split-open #pane { display: block; flex: 1; min-width: 0; }
+  /* narrow hosts: pane replaces the list */
+  .narrow.split-open #listcol { display: none; }
+  .narrow.split-open #pane { border-left: none; }
+
+  .row {
+    display: flex; gap: 10px; padding: 9px 14px; cursor: pointer;
+    border-bottom: 1px solid var(--border); position: relative;
+    transition: background .1s;
+  }
+  .row:hover { background: var(--bg2); }
+  .row.sel { background: var(--accent-soft); }
+  .row .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+    opacity: 0; }
+  .row.unread .dot { opacity: 1; }
+  .row .mid { flex: 1; min-width: 0; }
+  .row .l1 { display: flex; align-items: baseline; gap: 8px; }
+  .row .sender { font-weight: 400; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.unread .sender, .row.unread .subj { font-weight: 600; }
+  .row .when { color: var(--text3); font-size: 11.5px; flex-shrink: 0; }
+  .row.unread .when { color: var(--accent); }
+  .row .subj { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .row .prev { color: var(--text3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .meta-ic { display: inline-flex; gap: 4px; color: var(--text3); vertical-align: -2px; margin-left: 5px; }
+  .row .flagged-ic { color: var(--danger); }
+  .rowactions {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    display: none; gap: 2px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 2px; box-shadow: var(--shadow);
+  }
+  .row:hover .rowactions { display: flex; }
+
+  #pane .mailhead { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+  #pane .msubj { font-size: 15.5px; font-weight: 600; margin: 0 0 10px; }
+  #pane .fromline { display: flex; gap: 10px; align-items: center; }
+  #pane .body {
+    padding: 14px 16px; white-space: pre-wrap; word-break: break-word;
+    font-size: 13px; color: var(--text);
+  }
+  .attchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toolbar">
+    <div class="tb-title"><span id="ic"></span><span id="folder">Mail</span>
+      <span class="muted" id="count"></span></div>
+    <div class="tb-actions">
+      <button class="btn ghost" id="unreadBtn" title="Show unread only"></button>
+      <button class="btn ghost iconbtn" id="refreshBtn" title="Refresh"></button>
+    </div>
+  </div>
+  <div id="error"></div>
+  <div id="split">
+    <div id="listcol" class="scroll"><div id="list"><div class="empty"><div class="spinner"></div></div></div></div>
+    <div id="pane" class="scroll"></div>
+  </div>
+  <div class="statusbar"><span id="status">Connecting…</span><span id="updated"></span></div>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let items = [];            // current mail list
+let toolArgs = {};         // arguments of the original list/search call
+let toolName = "outlook_list_mails";
+let unreadOnly = false;
+let selectedId = null;
+let confirmDelete = null;  // entry_id awaiting second delete click
+
+$("ic").innerHTML = icon("mail", 16);
+$("unreadBtn").innerHTML = icon("mailOpen", 14) + " Unread";
+$("refreshBtn").innerHTML = icon("refresh", 15);
+
+MCPApp.onToolInput(p => {
+  const a = (p && p.arguments) || {};
+  toolArgs = a;
+  if (a.query !== undefined) toolName = "outlook_search_mails";
+  if (a.unread_only) unreadOnly = true;
+});
+
+MCPApp.onToolResult(r => {
+  if (r.isError) return fail(r);
+  const d = MCPApp.data(r);
+  if (!d || !Array.isArray(d.items)) return;
+  load(d);
+});
+
+function fail(r) {
+  const txt = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+  $("error").innerHTML = '<div class="banner">' + esc(txt || "Something went wrong.") + "</div>";
+  $("list").innerHTML = "";
+  showStatus($("status"), "Error");
+}
+
+function load(d) {
+  items = d.items;
+  $("error").innerHTML = "";
+  $("folder").textContent = d.query ? ('“' + d.query + '”') : (d.folder || "Mail");
+  const unread = items.filter(m => m.unread).length;
+  $("count").textContent = items.length + (d.has_more ? "+" : "") + (unread ? " · " + unread + " unread" : "");
+  showStatus($("status"), d.query ? "Search results" : "Ready");
+  $("updated").textContent = "Updated " + nowClock();
+  renderList();
+}
+
+function renderList() {
+  const shown = unreadOnly ? items.filter(m => m.unread) : items;
+  $("unreadBtn").classList.toggle("on", unreadOnly);
+  if (!shown.length) {
+    $("list").innerHTML = '<div class="empty"><div class="big">📭</div>' +
+      (unreadOnly ? "No unread mail — nice." : "Nothing here.") + "</div>";
+    return;
+  }
+  $("list").innerHTML = shown.map(m => {
+    const sel = m.entry_id === selectedId ? " sel" : "";
+    const unreadCls = m.unread ? " unread" : "";
+    const ics =
+      (m.has_attachments ? '<span class="meta-ic">' + icon("clip", 12) + "</span>" : "") +
+      (m.flagged ? '<span class="meta-ic flagged-ic">' + icon("flag", 12) + "</span>" : "");
+    const delConfirm = confirmDelete === m.entry_id;
+    return '<div class="row fade-in' + unreadCls + sel + '" data-id="' + esc(m.entry_id) + '">' +
+      '<span class="dot"></span>' + avatarHtml(m.from || m.from_address) +
+      '<div class="mid">' +
+        '<div class="l1"><span class="sender">' + esc(m.from || m.from_address || "(unknown)") + "</span>" +
+          '<span class="when">' + esc(fmtWhen(m.received)) + "</span></div>" +
+        '<span class="subj">' + esc(m.subject || "(no subject)") + ics + "</span>" +
+        '<div class="prev">' + esc(m.preview || "") + "</div>" +
+      "</div>" +
+      '<div class="rowactions">' +
+        '<button class="btn ghost iconbtn" data-act="read" title="' + (m.unread ? "Mark read" : "Mark unread") + '">' +
+          icon(m.unread ? "mailOpen" : "mail", 14) + "</button>" +
+        '<button class="btn ghost iconbtn" data-act="flag" title="Toggle flag">' + icon("flag", 14) + "</button>" +
+        '<button class="btn ghost iconbtn danger" data-act="del" title="Delete">' +
+          (delConfirm ? "Sure?" : icon("trash", 14)) + "</button>" +
+      "</div></div>";
+  }).join("");
+}
+
+$("list").parentElement.addEventListener("click", async ev => {
+  const actBtn = ev.target.closest("[data-act]");
+  const row = ev.target.closest(".row");
+  if (!row) return;
+  const id = row.dataset.id;
+  const m = items.find(x => x.entry_id === id);
+  if (!m) return;
+  if (actBtn) { ev.stopPropagation(); return doAction(actBtn.dataset.act, m); }
+  openMail(m);
+});
+
+async function doAction(act, m) {
+  try {
+    if (act === "read") {
+      const r = await MCPApp.callTool("outlook_mark_mail", { entry_id: m.entry_id, read: m.unread });
+      const d = MCPApp.data(r);
+      m.unread = d && typeof d.unread === "boolean" ? d.unread : !m.unread;
+    } else if (act === "flag") {
+      const r = await MCPApp.callTool("outlook_mark_mail", { entry_id: m.entry_id, flagged: !m.flagged });
+      const d = MCPApp.data(r); m.flagged = d && typeof d.flagged === "boolean" ? d.flagged : !m.flagged;
+    } else if (act === "del") {
+      if (confirmDelete !== m.entry_id) { confirmDelete = m.entry_id; renderList(); return; }
+      confirmDelete = null;
+      await MCPApp.callTool("outlook_delete_mail", { entry_id: m.entry_id });
+      items = items.filter(x => x.entry_id !== m.entry_id);
+      if (selectedId === m.entry_id) closePane();
+      MCPApp.updateModelContext("User deleted the mail “" + (m.subject || "(no subject)") +
+        "” from " + (m.from || "unknown sender") + " via the inbox view.");
+    }
+    renderList();
+  } catch (e) {
+    $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+  }
+}
+
+async function openMail(m) {
+  selectedId = m.entry_id;
+  confirmDelete = null;
+  document.getElementById("app").classList.add("split-open");
+  document.getElementById("app").classList.toggle("narrow", document.documentElement.clientWidth < 640);
+  renderList();
+  $("pane").innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  try {
+    const r = await MCPApp.callTool("outlook_get_mail",
+      { entry_id: m.entry_id, include_body: true, max_body_chars: 20000 });
+    const d = MCPApp.data(r);
+    if (!d) throw new Error("No data returned.");
+    if (m.unread) { m.unread = false; renderList();
+      MCPApp.callTool("outlook_mark_mail", { entry_id: m.entry_id, read: true }).catch(() => {}); }
+    renderPane(d);
+  } catch (e) {
+    $("pane").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+  }
+}
+
+function renderPane(d) {
+  const atts = (d.attachments || []).map(a =>
+    '<span class="chip">' + icon("clip", 12) + " " + esc(a.filename) +
+    ' <span class="faint">' + fmtSize(a.size_bytes) + "</span></span>").join("");
+  $("pane").innerHTML =
+    '<div class="mailhead fade-in">' +
+      '<button class="btn ghost" id="backBtn">' + icon("back", 13) + " Back</button>" +
+      '<h2 class="msubj">' + esc(d.subject || "(no subject)") + "</h2>" +
+      '<div class="fromline">' + avatarHtml(d.from || d.from_address) +
+        "<div><div><b>" + esc(d.from || "") + "</b> <span class=\"muted\">&lt;" + esc(d.from_address || "") + "&gt;</span></div>" +
+        '<div class="muted">to ' + esc(d.to || "") + (d.cc ? " · cc " + esc(d.cc) : "") + "</div>" +
+        '<div class="faint" style="font-size:11.5px">' + esc(fmtWhen(d.received)) + "</div></div></div>" +
+      (atts ? '<div class="attchips">' + atts + "</div>" : "") +
+    "</div>" +
+    '<div class="body fade-in">' + linkify(d.body || "(no body)") +
+      (d.body_truncated ? '<div class="muted" style="margin-top:10px">(truncated — ask the assistant for the rest)</div>' : "") +
+    "</div>";
+  const back = document.getElementById("backBtn");
+  back.style.display = document.getElementById("app").classList.contains("narrow") ? "" : "none";
+  back.addEventListener("click", closePane);
+}
+
+function closePane() {
+  selectedId = null;
+  document.getElementById("app").classList.remove("split-open");
+  $("pane").innerHTML = "";
+  renderList();
+}
+
+function fmtSize(b) {
+  if (b == null) return "";
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b / 1024).toFixed(0) + " KB";
+  return (b / 1048576).toFixed(1) + " MB";
+}
+
+$("unreadBtn").addEventListener("click", () => { unreadOnly = !unreadOnly; renderList(); });
+$("refreshBtn").addEventListener("click", async () => {
+  showStatus($("status"), "Refreshing…");
+  try {
+    const r = await MCPApp.callTool(toolName, toolArgs);
+    const d = MCPApp.data(r);
+    if (d && Array.isArray(d.items)) load(d);
+  } catch (e) {
+    $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+    showStatus($("status"), "Error");
+  }
+});
+
+MCPApp.init({ name: "outlook-mail-list", version: "1.0.0" })
+  .then(() => showStatus($("status"), "Waiting for data…"))
+  .catch(e => showStatus($("status"), "Host handshake failed: " + e.message));
+</script>
+</body>
+</html>

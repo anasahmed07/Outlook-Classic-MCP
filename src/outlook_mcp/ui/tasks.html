@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Outlook — Tasks</title>
+<!--%COMMON%-->
+<style>
+  .task {
+    display: flex; align-items: center; gap: 11px; padding: 9px 14px;
+    border-bottom: 1px solid var(--border); transition: background .1s;
+  }
+  .task:hover { background: var(--bg2); }
+  .tick {
+    width: 19px; height: 19px; border-radius: 50%; flex-shrink: 0;
+    border: 1.7px solid var(--border2); background: transparent; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: transparent;
+    transition: all .15s; padding: 0;
+  }
+  .tick:hover { border-color: var(--accent); color: var(--accent); }
+  .task.done .tick { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .task .mid { flex: 1; min-width: 0; }
+  .task .subj { font-size: 13.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task.done .subj { text-decoration: line-through; color: var(--text3); }
+  .task.busy { opacity: .55; pointer-events: none; }
+  .imp-high { color: var(--danger); font-weight: 700; margin-right: 4px; }
+  .addrow {
+    display: flex; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .addrow input[type="text"] { flex: 1; min-width: 0; }
+  .addrow input[type="date"] { flex: 0 0 130px; color-scheme: light dark; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toolbar">
+    <div class="tb-title">✅ <span>Tasks</span> <span class="muted" id="count"></span></div>
+    <div class="tb-actions">
+      <button class="btn ghost" id="doneBtn" title="Show completed too">Completed</button>
+      <button class="btn ghost iconbtn" id="refreshBtn" title="Refresh"></button>
+    </div>
+  </div>
+  <div id="error"></div>
+  <div id="list" class="scroll" style="max-height:420px">
+    <div class="empty"><div class="spinner"></div></div>
+  </div>
+  <div class="addrow">
+    <input type="text" id="newSubj" placeholder="Add a task…" maxlength="255" />
+    <input type="date" id="newDue" title="Due date (optional)" />
+    <button class="btn primary" id="addBtn"></button>
+  </div>
+  <div class="statusbar"><span id="status">Connecting…</span><span id="updated"></span></div>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let tasks = [];
+let includeCompleted = false;
+let toolArgs = {};
+
+$("refreshBtn").innerHTML = icon("refresh", 15);
+$("addBtn").innerHTML = icon("plus", 14) + " Add";
+
+MCPApp.onToolInput(p => {
+  toolArgs = (p && p.arguments) || {};
+  if (toolArgs.include_completed) includeCompleted = true;
+});
+MCPApp.onToolResult(r => {
+  if (r.isError) {
+    const txt = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+    $("error").innerHTML = '<div class="banner">' + esc(txt || "Something went wrong.") + "</div>";
+    $("list").innerHTML = "";
+    return;
+  }
+  const d = MCPApp.data(r);
+  if (!d || !Array.isArray(d.items)) return;
+  load(d);
+});
+
+function load(d) {
+  tasks = d.items;
+  $("error").innerHTML = "";
+  const open = tasks.filter(t => !t.complete).length;
+  $("count").textContent = open + " open" + (includeCompleted ? " · " + (tasks.length - open) + " done" : "");
+  $("doneBtn").classList.toggle("on", includeCompleted);
+  showStatus($("status"), "Ready");
+  $("updated").textContent = "Updated " + nowClock();
+  render();
+}
+
+function dueChip(t) {
+  if (!t.due_date) return "";
+  const d = new Date(t.due_date);
+  if (isNaN(d)) return "";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+  const label = MONTHS[d.getMonth()] + " " + d.getDate();
+  if (t.complete) return '<span class="chip">' + label + "</span>";
+  if (dd < today) return '<span class="chip danger">Overdue · ' + label + "</span>";
+  if (dd.getTime() === today.getTime()) return '<span class="chip warn">Today</span>';
+  return '<span class="chip">' + label + "</span>";
+}
+
+function render() {
+  if (!tasks.length) {
+    $("list").innerHTML = '<div class="empty"><div class="big">🎉</div>No tasks — all clear.</div>';
+    return;
+  }
+  const sorted = tasks.slice().sort((a, b) =>
+    (a.complete - b.complete) || String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
+  $("list").innerHTML = sorted.map(t =>
+    '<div class="task fade-in' + (t.complete ? " done" : "") + '" data-id="' + esc(t.entry_id) + '">' +
+      '<button class="tick" title="' + (t.complete ? "Completed" : "Mark complete") + '">' + icon("check", 11) + "</button>" +
+      '<div class="mid"><span class="subj">' +
+        (t.importance === 2 ? '<span class="imp-high">!</span>' : "") +
+        esc(t.subject || "(untitled)") + "</span></div>" +
+      dueChip(t) +
+    "</div>").join("");
+}
+
+$("list").addEventListener("click", async ev => {
+  const tick = ev.target.closest(".tick");
+  if (!tick) return;
+  const row = ev.target.closest(".task");
+  const t = tasks.find(x => x.entry_id === row.dataset.id);
+  if (!t || t.complete) return;
+  row.classList.add("busy");
+  try {
+    await MCPApp.callTool("outlook_complete_task", { entry_id: t.entry_id });
+    t.complete = true;
+    MCPApp.updateModelContext("User completed the task “" + (t.subject || "(untitled)") + "” via the tasks view.");
+    if (!includeCompleted) tasks = tasks.filter(x => x.entry_id !== t.entry_id);
+    load({ items: tasks });
+  } catch (e) {
+    row.classList.remove("busy");
+    $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+  }
+});
+
+async function addTask() {
+  const subj = $("newSubj").value.trim();
+  if (!subj) return;
+  $("addBtn").disabled = true;
+  try {
+    const args = { subject: subj };
+    if ($("newDue").value) args.due_date = $("newDue").value;
+    await MCPApp.callTool("outlook_create_task", args);
+    $("newSubj").value = ""; $("newDue").value = "";
+    MCPApp.updateModelContext("User added the task “" + subj + "” via the tasks view.");
+    await refresh();
+  } catch (e) {
+    $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+  } finally {
+    $("addBtn").disabled = false;
+  }
+}
+$("addBtn").addEventListener("click", addTask);
+$("newSubj").addEventListener("keydown", ev => { if (ev.key === "Enter") addTask(); });
+
+async function refresh() {
+  showStatus($("status"), "Refreshing…");
+  const args = Object.assign({}, toolArgs, { include_completed: includeCompleted });
+  const r = await MCPApp.callTool("outlook_list_tasks", args);
+  const d = MCPApp.data(r);
+  if (d && Array.isArray(d.items)) load(d);
+}
+$("refreshBtn").addEventListener("click", () => refresh().catch(e => {
+  $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+}));
+$("doneBtn").addEventListener("click", () => {
+  includeCompleted = !includeCompleted;
+  refresh().catch(e => { $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>"; });
+});
+
+MCPApp.init({ name: "outlook-tasks", version: "1.0.0" })
+  .then(() => showStatus($("status"), "Waiting for data…"))
+  .catch(e => showStatus($("status"), "Host handshake failed: " + e.message));
+</script>
+</body>
+</html>

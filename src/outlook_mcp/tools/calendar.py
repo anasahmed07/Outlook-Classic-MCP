@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
+from mcp.types import CallToolResult
 from pydantic import Field
 
 from outlook_mcp.client import calendar as cal_client
 from outlook_mcp.schemas import Recurrence
+from outlook_mcp.ui import ui_meta, ui_result
 from outlook_mcp.utils.formatting import format_response
 from outlook_mcp.utils.safety import safe_call
 
@@ -22,6 +24,8 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        meta=ui_meta("calendar"),
+        structured_output=False,
     )
     @safe_call
     async def outlook_list_events(
@@ -30,7 +34,7 @@ def register(mcp, bridge) -> None:
         limit: Annotated[int, Field(ge=1, le=200)] = 50,
         include_recurrences: Annotated[bool, Field()] = True,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """List calendar events in a date range, including recurring instances."""
         data = await bridge.call(
             cal_client.list_events,
@@ -39,7 +43,7 @@ def register(mcp, bridge) -> None:
             limit=limit,
             include_recurrences=include_recurrences,
         )
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_get_event",
@@ -50,15 +54,16 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        structured_output=False,
     )
     @safe_call
     async def outlook_get_event(
         entry_id: Annotated[str, Field(description="EntryID of the event.")],
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """Fetch an event with attendees, body, and recurrence info."""
         data = await bridge.call(cal_client.get_event, entry_id=entry_id)
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_create_event",

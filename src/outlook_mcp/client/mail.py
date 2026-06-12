@@ -68,6 +68,7 @@ def _mail_summary(item: Any) -> dict[str, Any]:
         "to": _safe_get(item, "To", ""),
         "received": to_iso(_safe_get(item, "ReceivedTime")),
         "unread": bool(_safe_get(item, "UnRead", False)),
+        "flagged": _safe_get(item, "FlagStatus") == 2,  # olFlagMarked
         "has_attachments": attachments.Count > 0 if attachments else False,
         "importance": _safe_get(item, "Importance"),
         "preview": truncate(_safe_get(item, "Body", ""), 200),
@@ -102,6 +103,7 @@ def _mail_full(
         "received": to_iso(_safe_get(item, "ReceivedTime")),
         "sent": to_iso(_safe_get(item, "SentOn")),
         "unread": bool(_safe_get(item, "UnRead", False)),
+        "flagged": _safe_get(item, "FlagStatus") == 2,  # olFlagMarked
         "importance": _safe_get(item, "Importance"),
         "categories": _safe_get(item, "Categories", ""),
         "attachments": attachments,

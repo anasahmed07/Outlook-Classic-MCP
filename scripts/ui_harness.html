@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><style>body{margin:0;background:#ddd}iframe{border:0;width:100%;height:100vh;background:#fff}</style></head>
+<body>
+<iframe id="f"></iframe>
+<script>
+const params = new URLSearchParams(location.search);
+const view = params.get("view") || "mail-list";
+const theme = params.get("theme") || "light";
+document.getElementById("f").src = view + ".html";
+
+const FAKE = {
+  "mail-list": {
+    content: [{type:"text",text:"x"}],
+    structuredContent: {
+      folder: "Inbox", count: 6, has_more: false,
+      items: [
+        {entry_id:"1",subject:"Q3 budget review — final numbers attached",from:"Sara Khan",from_address:"sara.khan@contoso.com",received:new Date(Date.now()-30*60000).toISOString(),unread:true,flagged:false,has_attachments:true,preview:"Hi Anas, attached is the final Q3 budget deck. Please review the headcount tab before Friday's sync."},
+        {entry_id:"2",subject:"Your password expires in 3 days",from:"IT Service Desk",from_address:"itdesk@contoso.com",received:new Date(Date.now()-3*3600000).toISOString(),unread:true,flagged:true,has_attachments:false,preview:"Action required: your Windows password expires soon. Use Ctrl+Alt+Del to change it."},
+        {entry_id:"3",subject:"Re: standup notes (Jun 11)",from:"Ali Raza",from_address:"ali.raza@contoso.com",received:new Date(Date.now()-26*3600000).toISOString(),unread:false,flagged:false,has_attachments:false,preview:"Thanks! One correction — the deploy moved to Thursday."},
+        {entry_id:"4",subject:"Lunch & learn: intro to MCP Apps",from:"People Team",from_address:"people@contoso.com",received:new Date(Date.now()-2*86400000).toISOString(),unread:false,flagged:false,has_attachments:false,preview:"Join us Friday 1pm in the big room. Pizza provided 🍕"},
+        {entry_id:"5",subject:"Invoice #4521 from Acme Corp",from:"Acme Billing",from_address:"billing@acme.com",received:new Date(Date.now()-4*86400000).toISOString(),unread:false,flagged:false,has_attachments:true,preview:"Please find attached invoice #4521 due June 30."},
+        {entry_id:"6",subject:"Weekly digest: 14 PRs merged",from:"GitHub",from_address:"noreply@github.com",received:new Date(Date.now()-5*86400000).toISOString(),unread:false,flagged:false,has_attachments:false,preview:"anasahmed07/outlook-classic-mcp had a busy week."}
+      ]
+    }
+  },
+  "mail-view": {
+    content: [{type:"text",text:"x"}],
+    structuredContent: {
+      entry_id:"1", subject:"Q3 budget review — final numbers attached",
+      from:"Sara Khan", from_address:"sara.khan@contoso.com",
+      to:"Anas Ahmed", cc:"Finance Team",
+      received:new Date(Date.now()-30*60000).toISOString(), unread:true, flagged:false,
+      attachments:[{index:1,filename:"Q3-budget-final.xlsx",size_bytes:482133},{index:2,filename:"headcount-plan.pdf",size_bytes:1248576}],
+      body:"Hi Anas,\n\nAttached is the final Q3 budget deck. Please review the headcount tab before Friday's sync — the delta vs. last quarter is mostly in cloud spend.\n\nKey points:\n  • Cloud spend up 12% (more CI runners)\n  • Two new hires approved for the platform team\n  • Travel budget unchanged\n\nDetails here: https://contoso.sharepoint.com/finance/q3\n\nThanks,\nSara"
+    }
+  },
+  "calendar": {
+    content: [{type:"text",text:"x"}],
+    structuredContent: (() => {
+      const d = (days, h, m, durH) => {
+        const s = new Date(); s.setDate(s.getDate()+days); s.setHours(h,m,0,0);
+        const e = new Date(s.getTime() + durH*3600000);
+        return {start:s.toISOString(), end:e.toISOString()};
+      };
+      return { start:new Date().toISOString(), end:new Date(Date.now()+14*86400000).toISOString(), count:5, items:[
+        Object.assign({entry_id:"e1",subject:"Daily standup",location:"Teams",organizer:"Ali Raza",is_recurring:true,all_day:false}, d(0,9,30,0.25)),
+        Object.assign({entry_id:"e2",subject:"Q3 budget sync",location:"Room 4B",organizer:"Sara Khan",is_recurring:false,all_day:false}, d(0,14,0,1)),
+        Object.assign({entry_id:"e3",subject:"1:1 with manager",location:"",organizer:"Hina Qureshi",is_recurring:true,all_day:false}, d(1,11,0,0.5)),
+        Object.assign({entry_id:"e4",subject:"Public holiday — Eid",location:"",organizer:"",is_recurring:false,all_day:true}, d(3,0,0,24)),
+        Object.assign({entry_id:"e5",subject:"Sprint review + demo",location:"Big room / Teams",organizer:"Ali Raza",is_recurring:false,all_day:false}, d(4,15,0,1.5)),
+      ]};
+    })()
+  },
+  "contacts": {
+    content: [{type:"text",text:"x"}],
+    structuredContent: { count:6, items:[
+      {entry_id:"c1",full_name:"Sara Khan",email:"sara.khan@contoso.com",company:"Contoso",job_title:"Finance Lead",mobile:"+92 300 1234567",source:"contacts"},
+      {entry_id:"c2",full_name:"Ali Raza",email:"ali.raza@contoso.com",company:"Contoso",job_title:"Engineering Manager",mobile:"",source:"contacts"},
+      {full_name:"Hina Qureshi",email:"hina.q@contoso.com",company:"Contoso",job_title:"Director of Product",mobile:"",source:"directory"},
+      {entry_id:"c4",full_name:"Acme Billing",email:"billing@acme.com",company:"Acme Corp",job_title:"",mobile:"",source:"contacts"},
+      {full_name:"Omar Farooq",email:"omar.f@contoso.com",company:"Contoso",job_title:"SRE",mobile:"+92 321 7654321",source:"directory"},
+      {entry_id:"c6",full_name:"Zainab Ahmed",email:"zainab@designstudio.pk",company:"Design Studio",job_title:"Brand Designer",mobile:"",source:"contacts"},
+    ]}
+  },
+  "tasks": {
+    content: [{type:"text",text:"x"}],
+    structuredContent: { count:5, items:[
+      {entry_id:"t1",subject:"Review Q3 budget headcount tab",due_date:new Date(Date.now()-86400000).toISOString(),complete:false,importance:2},
+      {entry_id:"t2",subject:"Change Windows password",due_date:new Date().toISOString(),complete:false,importance:1},
+      {entry_id:"t3",subject:"Prepare sprint demo slides",due_date:new Date(Date.now()+3*86400000).toISOString(),complete:false,importance:1},
+      {entry_id:"t4",subject:"Publish outlook-classic-mcp 0.3.0",due_date:null,complete:false,importance:1},
+      {entry_id:"t5",subject:"Send invoice #4521 to accounting",due_date:new Date(Date.now()-2*86400000).toISOString(),complete:true,importance:1},
+    ]}
+  }
+};
+
+window.addEventListener("message", ev => {
+  const m = ev.data;
+  if (!m || m.jsonrpc !== "2.0") return;
+  const iframe = document.getElementById("f").contentWindow;
+  if (m.method === "ui/initialize") {
+    iframe.postMessage({jsonrpc:"2.0", id:m.id, result:{
+      protocolVersion:"2026-01-26",
+      hostCapabilities:{serverTools:{}},
+      hostInfo:{name:"harness",version:"0"},
+      hostContext:{theme: theme, displayMode:"inline"}
+    }}, "*");
+  } else if (m.method === "ui/notifications/initialized") {
+    iframe.postMessage({jsonrpc:"2.0", method:"ui/notifications/tool-input", params:{arguments:{}}}, "*");
+    iframe.postMessage({jsonrpc:"2.0", method:"ui/notifications/tool-result", params: FAKE[view]}, "*");
+  } else if (m.method === "tools/call" && m.id !== undefined) {
+    if (m.params.name === "outlook_get_mail")
+      iframe.postMessage({jsonrpc:"2.0", id:m.id, result: FAKE["mail-view"]}, "*");
+    else if (m.params.name === "outlook_get_event")
+      iframe.postMessage({jsonrpc:"2.0", id:m.id, result: {content:[],structuredContent:{attendees:[{name:"Sara Khan",response:3},{name:"Ali Raza",response:2}],body:"Agenda: review final numbers."}}}, "*");
+    else
+      iframe.postMessage({jsonrpc:"2.0", id:m.id, result: FAKE[view] || {content:[]}}, "*");
+  }
+});
+</script>
+</body>
+</html>

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
+from mcp.types import CallToolResult
 from pydantic import Field
 
 from outlook_mcp.client import tasks as tasks_client
+from outlook_mcp.ui import ui_meta, ui_result
 from outlook_mcp.utils.formatting import format_response
 from outlook_mcp.utils.safety import safe_call
 
@@ -21,18 +23,20 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        meta=ui_meta("tasks"),
+        structured_output=False,
     )
     @safe_call
     async def outlook_list_tasks(
         limit: Annotated[int, Field(ge=1, le=200)] = 50,
         include_completed: Annotated[bool, Field()] = False,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """List tasks (to-dos). By default only incomplete tasks are returned."""
         data = await bridge.call(
             tasks_client.list_tasks, limit=limit, include_completed=include_completed
         )
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_create_task",

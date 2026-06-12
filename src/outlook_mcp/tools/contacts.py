@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
+from mcp.types import CallToolResult
 from pydantic import Field
 
 from outlook_mcp.client import contacts as contacts_client
+from outlook_mcp.ui import ui_meta, ui_result
 from outlook_mcp.utils.formatting import format_response
 from outlook_mcp.utils.safety import safe_call
 
@@ -21,13 +23,15 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        meta=ui_meta("contacts"),
+        structured_output=False,
     )
     @safe_call
     async def outlook_list_contacts(
         limit: Annotated[int, Field(ge=1, le=200)] = 50,
         offset: Annotated[int, Field(ge=0)] = 0,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """List saved contacts from every contact folder in every store.
 
         Note: on corporate accounts the personal contact folders are often
@@ -38,7 +42,7 @@ def register(mcp, bridge) -> None:
         data = await bridge.call(
             contacts_client.list_contacts, limit=limit, offset=offset
         )
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_search_contacts",
@@ -49,6 +53,8 @@ def register(mcp, bridge) -> None:
             "idempotentHint": True,
             "openWorldHint": False,
         },
+        meta=ui_meta("contacts"),
+        structured_output=False,
     )
     @safe_call
     async def outlook_search_contacts(
@@ -70,7 +76,7 @@ def register(mcp, bridge) -> None:
             ),
         ] = True,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
-    ) -> str:
+    ) -> CallToolResult:
         """Search saved contacts and (by default) the org directory."""
         data = await bridge.call(
             contacts_client.search_contacts,
@@ -78,7 +84,7 @@ def register(mcp, bridge) -> None:
             limit=limit,
             include_directory=include_directory,
         )
-        return format_response(data, response_format)
+        return ui_result(format_response(data, response_format), data)
 
     @mcp.tool(
         name="outlook_resolve_name",

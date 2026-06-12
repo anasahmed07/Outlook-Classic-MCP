@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "outlook-classic-mcp"
-version = "0.2.5"
+version = "0.3.0"
 description = "Local MCP server for classic Outlook desktop on Windows (COM, no Azure app required)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,7 +25,7 @@ classifiers = [
   "Topic :: Office/Business",
 ]
 dependencies = [
-  "mcp>=1.10",
+  "mcp>=1.27",  # tool/resource meta= + CallToolResult pass-through (MCP Apps)
   "pydantic>=2.6",
   "pywin32>=306; sys_platform == 'win32'",
 ]
@@ -42,6 +42,9 @@ Issues = "https://github.com/anasahmed07/Outlook-Classic-MCP/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"outlook_mcp.ui" = ["*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Outlook — Contacts</title>
+<!--%COMMON%-->
+<style>
+  .searchwrap { position: relative; flex: 1; max-width: 320px; }
+  .searchwrap svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text3); }
+  .searchwrap input { width: 100%; padding-left: 31px; }
+  #grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr));
+    gap: 10px; padding: 12px 14px;
+  }
+  .card {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--card); padding: 12px; display: flex; gap: 11px;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+  .card .info { flex: 1; min-width: 0; }
+  .card .nm { font-weight: 600; font-size: 13.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .role { color: var(--text2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .line { display: flex; align-items: center; gap: 5px; margin-top: 5px; font-size: 12px; color: var(--text2); min-width: 0; }
+  .card .line .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .card .copy { opacity: 0; transition: opacity .12s; }
+  .card:hover .copy { opacity: 1; }
+  .dirbadge { font-size: 10.5px; padding: 1px 7px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toolbar">
+    <div class="tb-title">👥 <span>Contacts</span> <span class="muted" id="count"></span></div>
+    <div class="searchwrap">
+      <span id="searchIc"></span>
+      <input type="search" id="q" placeholder="Search people, companies…" autocomplete="off" />
+    </div>
+  </div>
+  <div id="error"></div>
+  <div id="gridwrap" class="scroll" style="max-height:480px">
+    <div id="grid"></div>
+  </div>
+  <div class="statusbar"><span id="status">Connecting…</span><span id="updated"></span></div>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let contacts = [];
+let searchTimer = 0;
+let searchSeq = 0;
+
+$("searchIc").innerHTML = icon("search", 13);
+
+MCPApp.onToolResult(r => {
+  if (r.isError) {
+    const txt = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+    $("error").innerHTML = '<div class="banner">' + esc(txt || "Something went wrong.") + "</div>";
+    return;
+  }
+  const d = MCPApp.data(r);
+  if (!d || !Array.isArray(d.items)) return;
+  if (d.query) $("q").value = d.query;
+  load(d);
+});
+
+function load(d) {
+  contacts = d.items;
+  $("error").innerHTML = "";
+  $("count").textContent = contacts.length + (d.has_more ? "+" : "");
+  showStatus($("status"),
+    d.searched_directory === false ? "Saved contacts only"
+      : d.searched_directory === true ? "Contacts + directory" : "Ready");
+  $("updated").textContent = "Updated " + nowClock();
+  render();
+}
+
+function render() {
+  if (!contacts.length) {
+    $("grid").innerHTML = "";
+    $("gridwrap").insertAdjacentHTML("afterbegin",
+      '<div class="empty" id="emptyMsg"><div class="big">🪪</div>No contacts found.</div>');
+    return;
+  }
+  const old = document.getElementById("emptyMsg");
+  if (old) old.remove();
+  $("grid").innerHTML = contacts.map((c, i) => {
+    const role = [c.job_title, c.company].filter(Boolean).join(" · ");
+    return '<div class="card fade-in">' + avatarHtml(c.full_name, 36) +
+      '<div class="info">' +
+        '<div class="nm">' + esc(c.full_name || "(no name)") +
+          (c.source === "directory" ? ' <span class="chip accent dirbadge">directory</span>' : "") + "</div>" +
+        (role ? '<div class="role">' + esc(role) + "</div>" : "") +
+        (c.email ? '<div class="line">' + icon("mail", 12) + '<span class="val">' + esc(c.email) + "</span>" +
+          '<button class="btn ghost iconbtn copy" data-copy="' + esc(c.email) + '" title="Copy address">' +
+          icon("copy", 12) + "</button></div>" : "") +
+        (c.mobile ? '<div class="line">' + icon("person", 12) + '<span class="val">' + esc(c.mobile) + "</span></div>" : "") +
+      "</div></div>";
+  }).join("");
+}
+
+$("grid").addEventListener("click", async ev => {
+  const btn = ev.target.closest("[data-copy]");
+  if (!btn) return;
+  try { await navigator.clipboard.writeText(btn.dataset.copy); } catch (e) { return; }
+  btn.innerHTML = icon("check", 12);
+  setTimeout(() => { btn.innerHTML = icon("copy", 12); }, 1200);
+});
+
+$("q").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(doSearch, 450);
+});
+$("q").addEventListener("keydown", ev => {
+  if (ev.key === "Enter") { clearTimeout(searchTimer); doSearch(); }
+});
+
+async function doSearch() {
+  const q = $("q").value.trim();
+  const seq = ++searchSeq;
+  showStatus($("status"), "Searching…");
+  try {
+    const r = q
+      ? await MCPApp.callTool("outlook_search_contacts", { query: q, limit: 25 })
+      : await MCPApp.callTool("outlook_list_contacts", { limit: 50 });
+    if (seq !== searchSeq) return;   // a newer search superseded this one
+    const d = MCPApp.data(r);
+    if (d && Array.isArray(d.items)) load(d);
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    $("error").innerHTML = '<div class="banner">' + esc(e.message) + "</div>";
+    showStatus($("status"), "Error");
+  }
+}
+
+MCPApp.init({ name: "outlook-contacts", version: "1.0.0" })
+  .then(() => showStatus($("status"), "Waiting for data…"))
+  .catch(e => showStatus($("status"), "Host handshake failed: " + e.message));
+</script>
+</body>
+</html>
