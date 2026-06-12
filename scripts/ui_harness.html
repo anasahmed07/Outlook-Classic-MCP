@@ -80,6 +80,16 @@ window.addEventListener("message", ev => {
   if (!m || m.jsonrpc !== "2.0") return;
   const iframe = document.getElementById("f").contentWindow;
   if (m.method === "ui/initialize") {
+    // Validate like a strict host (Claude Desktop): these params are
+    // REQUIRED by the MCP Apps spec — a malformed request gets an error,
+    // not a silent pass, so protocol drift shows up in local preview.
+    const p = m.params || {};
+    if (!p.appInfo || !p.appInfo.name || !p.appCapabilities || !p.protocolVersion) {
+      console.error("ui/initialize params invalid (appInfo/appCapabilities/protocolVersion required):", p);
+      iframe.postMessage({jsonrpc:"2.0", id:m.id, error:{code:-32602,
+        message:"Invalid ui/initialize params: appInfo, appCapabilities and protocolVersion are required"}}, "*");
+      return;
+    }
     iframe.postMessage({jsonrpc:"2.0", id:m.id, result:{
       protocolVersion:"2026-01-26",
       hostCapabilities:{serverTools:{}},

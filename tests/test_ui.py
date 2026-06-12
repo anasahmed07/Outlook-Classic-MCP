@@ -59,6 +59,11 @@ def test_ui_resources_registered_and_render(server):
         assert not re.search(r'<link[^>]+href\s*=', html)
         assert ui_mod._UI_DIR.joinpath("_common.html").exists()
         assert "<!--%COMMON%-->" not in html
+        # ui/initialize params must follow the MCP Apps spec: `appInfo` is
+        # required — hosts that validate (Claude Desktop) silently drop the
+        # handshake otherwise and the view renders empty.
+        assert "appInfo:" in html
+        assert "clientInfo" not in html
 
 
 def test_ui_result_carries_both_representations():

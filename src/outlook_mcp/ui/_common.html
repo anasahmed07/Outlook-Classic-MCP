@@ -170,8 +170,7 @@ const MCPApp = (() => {
     if (!embedded) return null;   // opened directly in a browser — render-only mode
     const result = await request("ui/initialize", {
       protocolVersion: PROTOCOL,
-      capabilities: {},
-      clientInfo: appInfo || { name: "outlook-mcp-app", version: "1.0.0" },
+      appInfo: appInfo || { name: "outlook-mcp-app", version: "1.0.0" },
       appCapabilities: { availableDisplayModes: ["inline"] },
     });
     hostContext = (result && result.hostContext) || {};
