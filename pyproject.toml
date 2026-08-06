@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "outlook-classic-mcp"
-version = "0.3.1"
+version = "0.3.2"
 description = "Local MCP server for classic Outlook desktop on Windows (COM, no Azure app required)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,7 +25,7 @@ classifiers = [
   "Topic :: Office/Business",
 ]
 dependencies = [
-  "mcp>=1.27",  # tool/resource meta= + CallToolResult pass-through (MCP Apps)
+  "mcp<=1.29",  # capped to mcp less than 1.29 raised by the issue identified by @DanoPTT thanks for raising this issue. migration to mcp 2.0 is a new pending issue.
   "pydantic>=2.6",
   "pywin32>=306; sys_platform == 'win32'",
 ]
