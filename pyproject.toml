@@ -25,7 +25,7 @@ classifiers = [
   "Topic :: Office/Business",
 ]
 dependencies = [
-  "mcp>=1.27",  # tool/resource meta= + CallToolResult pass-through (MCP Apps)
+  "mcp<=1.29",  # capped to mcp less than 1.29 raised by the issue identified by @DanoPTT thanks for raising this issue. migration to mcp 2.0 is a new pending issue.
   "pydantic>=2.6",
   "pywin32>=306; sys_platform == 'win32'",
 ]
