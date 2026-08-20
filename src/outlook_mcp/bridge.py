@@ -92,6 +92,8 @@ class OutlookBridge:
         # call() knows to extend its wait instead of timing out.
         self._reconnecting = threading.Event()
         self._init_error: BaseException | None = None
+        # Guards lazy start() against concurrent first calls.
+        self._start_lock = threading.Lock()
         self._outlook: Any = None
         self._namespace: Any = None
         # Captured on the COM thread, safe to read from any thread.
@@ -105,10 +107,13 @@ class OutlookBridge:
         usually means the user denied a UAC prompt or Outlook is mid-
         crash recovery).
         """
-        self._thread = threading.Thread(
-            target=self._run, daemon=True, name="outlook-com"
-        )
-        self._thread.start()
+        with self._start_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._thread = threading.Thread(
+                target=self._run, daemon=True, name="outlook-com"
+            )
+            self._thread.start()
         if not self._ready.wait(timeout=_READY_TIMEOUT_SEC):
             raise RuntimeError(
                 f"Outlook COM thread did not become ready within "
@@ -248,9 +253,14 @@ class OutlookBridge:
             pythoncom.CoUninitialize()
 
     async def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        """Run ``func(outlook, namespace, *args, **kwargs)`` on the COM thread."""
+        """Run ``func(outlook, namespace, *args, **kwargs)`` on the COM thread.
+
+        Lazily starts the bridge (attaches to Outlook) on the first tool
+        call instead of at server startup. start() is blocking, so it runs
+        in an executor to keep the asyncio event loop responsive.
+        """
         if self._thread is None or not self._thread.is_alive():
-            raise RuntimeError("Bridge is not running. Did you forget to call start()?")
+            await asyncio.get_running_loop().run_in_executor(None, self.start)
         done = threading.Event()
         holder: dict[str, Any] = {}
         self._queue.put((func, args, kwargs, done, holder))

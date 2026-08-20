@@ -19,14 +19,11 @@ def main() -> None:
     log = logging.getLogger("outlook_mcp")
 
     mcp, bridge = build_server()
-    log.info("Starting outlook_mcp (stdio transport)")
+    log.info("Starting outlook_mcp (stdio transport, lazy Outlook connect)")
 
-    try:
-        bridge.start()
-    except Exception as exc:  # noqa: BLE001
-        log.error("Failed to attach to Outlook: %s", exc)
-        sys.exit(2)
-
+    # Don't connect Outlook at server startup. The bridge lazily attaches
+    # on the first tool call (see OutlookBridge.call), so starting the
+    # server never spawns OUTLOOK.EXE.
     try:
         mcp.run()
     finally:
