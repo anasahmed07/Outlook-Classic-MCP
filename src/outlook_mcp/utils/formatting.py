@@ -50,6 +50,26 @@ def to_iso(value: Any) -> str | None:
         return str(value)
 
 
+def to_com(value: dt.datetime | None) -> dt.datetime | None:
+    """Prepare a naive local datetime for assignment to a COM date property.
+
+    The mirror image of to_iso. On the way out, pywin32 converts the
+    datetime it is handed to UTC and gives Outlook that clock, which
+    Outlook stores as local wall time. A naive value is treated as
+    local, so an intended 14:00 is written as 12:00 in CEST -- every
+    created or updated event landed one UTC offset early, and an
+    all-day event snapped back to midnight a whole day early.
+
+    Labelling the intended wall clock as UTC makes pywin32's
+    conversion a no-op, so the clock survives unchanged. This is a
+    relabel, not arithmetic, so there is no DST edge case: it is the
+    exact inverse of to_iso's strip.
+    """
+    if value is None:
+        return None
+    return value.replace(tzinfo=dt.timezone.utc)
+
+
 def from_iso(value: str | None) -> dt.datetime | None:
     """Parse an ISO-8601 string into a naive datetime (Outlook uses local)."""
     if value is None:

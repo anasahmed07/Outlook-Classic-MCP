@@ -21,7 +21,7 @@ from outlook_mcp.constants import (
 )
 from outlook_mcp.errors import OutlookError
 from outlook_mcp.schemas import Recurrence
-from outlook_mcp.utils.formatting import from_iso, to_iso, truncate
+from outlook_mcp.utils.formatting import from_iso, to_com, to_iso, truncate
 
 
 _RECURRENCE_TYPE_MAP = {
@@ -75,7 +75,7 @@ def _apply_recurrence(appt: Any, spec: Recurrence) -> None:
     if spec.occurrences is not None:
         pattern.Occurrences = spec.occurrences
     if spec.end_date is not None:
-        pattern.PatternEndDate = from_iso(spec.end_date)
+        pattern.PatternEndDate = to_com(from_iso(spec.end_date))
 
 
 def list_events(
@@ -140,8 +140,11 @@ def create_event(
 ) -> dict[str, Any]:
     appt = outlook.CreateItem(OL_APPOINTMENT_ITEM)
     appt.Subject = subject
-    appt.Start = from_iso(start)
-    appt.End = from_iso(end)
+    # to_com, not the bare datetime: pywin32 would read a naive value
+    # as local and hand Outlook its UTC clock, shifting the event one
+    # offset early.
+    appt.Start = to_com(from_iso(start))
+    appt.End = to_com(from_iso(end))
     if location:
         appt.Location = location
     if body:
@@ -184,9 +187,9 @@ def update_event(
     if subject is not None:
         ev.Subject = subject
     if start is not None:
-        ev.Start = from_iso(start)
+        ev.Start = to_com(from_iso(start))
     if end is not None:
-        ev.End = from_iso(end)
+        ev.End = to_com(from_iso(end))
     if location is not None:
         ev.Location = location
     if body is not None:

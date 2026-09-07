@@ -3,7 +3,7 @@
 import datetime as dt
 import json
 
-from outlook_mcp.utils.formatting import format_response, to_iso, truncate
+from outlook_mcp.utils.formatting import format_response, to_com, to_iso, truncate
 
 
 def test_to_iso_relabels_fake_utc_as_local():
@@ -18,6 +18,31 @@ def test_to_iso_relabels_fake_utc_as_local():
 def test_to_iso_naive_gets_local_offset():
     naive = dt.datetime(2026, 1, 5, 9, 0, 0)
     assert to_iso(naive) == naive.astimezone().isoformat()
+
+
+def test_to_com_relabels_local_wall_clock_as_utc():
+    # pywin32 converts what it is given to UTC and hands Outlook that
+    # clock. Tagging the intended wall clock as UTC makes the
+    # conversion a no-op, so 14:00 is stored as 14:00 rather than
+    # being shifted one offset early.
+    intended = dt.datetime(2026, 10, 15, 14, 0, 0)
+    out = to_com(intended)
+    assert out.tzinfo is dt.timezone.utc
+    assert out.replace(tzinfo=None) == intended
+
+
+def test_to_com_is_inverse_of_to_iso():
+    # Round-tripping a wall clock out to Outlook and back must not move it.
+    for naive in (
+        dt.datetime(2026, 1, 5, 9, 0, 0),      # CET
+        dt.datetime(2026, 7, 5, 9, 0, 0),      # CEST
+        dt.datetime(2026, 10, 16, 0, 0, 0),    # midnight, the all-day case
+    ):
+        assert to_iso(to_com(naive)) == naive.astimezone().isoformat()
+
+
+def test_to_com_handles_none():
+    assert to_com(None) is None
 
 
 def test_to_iso_handles_none_and_str():
