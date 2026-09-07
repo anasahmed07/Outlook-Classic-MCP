@@ -17,7 +17,7 @@ from outlook_mcp.constants import (
     OL_MAIL_ITEM,
 )
 from outlook_mcp.errors import OutlookError
-from outlook_mcp.utils.formatting import from_iso, to_iso, truncate
+from outlook_mcp.utils.formatting import from_iso, to_dasl_date, to_iso, truncate
 from outlook_mcp.utils.paths import validate_attachment_path, validate_output_dir
 from outlook_mcp.utils.safety import safe_dasl
 
@@ -144,15 +144,25 @@ def list_mails(
         clauses.append("[UnRead] = True")
     since_dt = from_iso(since)
     until_dt = from_iso(until)
-    # Jet filter dates must be 12-hour + AM/PM; %H with %p would emit
-    # e.g. "14:30 PM", which Outlook misparses for afternoon times.
+    # DASL property query (locale-independent ISO dates) instead of a plain
+    # "[ReceivedTime] >= 'mm/dd/yyyy ...'" Jet literal, which Outlook parses
+    # using the Windows regional short-date order — on a non-US locale that
+    # silently swaps day/month and matches the wrong emails (verified live).
     if since_dt:
-        clauses.append(f"[ReceivedTime] >= '{since_dt.strftime('%m/%d/%Y %I:%M %p')}'")
+        clauses.append(f"\"urn:schemas:httpmail:datereceived\" >= '{to_dasl_date(since_dt)}'")
     if until_dt:
-        clauses.append(f"[ReceivedTime] <= '{until_dt.strftime('%m/%d/%Y %I:%M %p')}'")
+        clauses.append(f"\"urn:schemas:httpmail:datereceived\" <= '{to_dasl_date(until_dt)}'")
 
     if clauses:
-        items = items.Restrict(" AND ".join(clauses))
+        # unread_only's plain "[UnRead] = True" clause can't share an @SQL=
+        # DASL restrict with the datereceived clauses above, so split them
+        # into two Restrict() calls instead of one mixed-syntax string.
+        plain = [c for c in clauses if not c.startswith('"urn:')]
+        dasl = [c for c in clauses if c.startswith('"urn:')]
+        if plain:
+            items = items.Restrict(" AND ".join(plain))
+        if dasl:
+            items = items.Restrict("@SQL=" + " AND ".join(dasl))
 
     from_lower = from_address.lower() if from_address else None
     results: list[dict[str, Any]] = []

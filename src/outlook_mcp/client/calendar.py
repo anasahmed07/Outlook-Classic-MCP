@@ -21,7 +21,15 @@ from outlook_mcp.constants import (
 )
 from outlook_mcp.errors import OutlookError
 from outlook_mcp.schemas import Recurrence
-from outlook_mcp.utils.formatting import from_iso, to_iso, truncate
+from outlook_mcp.utils.formatting import from_iso, to_dasl_date, to_iso, truncate
+
+# How far before `start` to widen the Restrict() lower bound so events that
+# begin earlier but still overlap the requested window (multi-day / all-day
+# appointments) aren't excluded. Outlook's DASL Restrict() is only reliable
+# ANDing two bounds on the *same* property (verified live), so we can't add
+# a "[End] > start" clause directly — instead we over-fetch on [Start] and
+# apply the precise overlap check in Python below.
+_OVERLAP_LOOKBACK = dt.timedelta(days=3)
 
 
 _RECURRENCE_TYPE_MAP = {
@@ -78,6 +86,14 @@ def _apply_recurrence(appt: Any, spec: Recurrence) -> None:
         pattern.PatternEndDate = from_iso(spec.end_date)
 
 
+def _as_naive(value: Any) -> dt.datetime | None:
+    if not hasattr(value, "year"):
+        return None
+    return dt.datetime(
+        value.year, value.month, value.day, value.hour, value.minute, value.second
+    )
+
+
 def list_events(
     outlook: Any,
     namespace: Any,
@@ -98,25 +114,45 @@ def list_events(
     start_dt = from_iso(start) or dt.datetime.now()
     end_dt = from_iso(end) or (start_dt + dt.timedelta(days=14))
 
-    # Jet filter dates must be 12-hour + AM/PM; %H with %p would emit
-    # e.g. "14:30 PM", which Outlook misparses for afternoon times.
+    # DASL property query (locale-independent ISO dates) instead of a plain
+    # Jet literal — see to_dasl_date() for why the plain "[Start] >= 'mm/dd
+    # /yyyy ...'" form silently returns the wrong events on non-US locales.
     restrict = (
-        f"[Start] >= '{start_dt.strftime('%m/%d/%Y %I:%M %p')}' AND "
-        f"[Start] <= '{end_dt.strftime('%m/%d/%Y %I:%M %p')}'"
+        f"@SQL=\"urn:schemas:calendar:dtstart\" >= "
+        f"'{to_dasl_date(start_dt - _OVERLAP_LOOKBACK)}' AND "
+        f"\"urn:schemas:calendar:dtstart\" <= '{to_dasl_date(end_dt)}'"
     )
     filtered = items.Restrict(restrict)
 
     results: list[dict[str, Any]] = []
+    truncated = False
     for ev in filtered:
-        results.append(_event_summary(ev))
+        ev_start = _as_naive(_safe_get(ev, "Start"))
+        ev_end = _as_naive(_safe_get(ev, "End"))
+        if ev_start is None:
+            continue
+        # Restrict() above only bounds [Start]; apply the real overlap test
+        # (and, for un-expanded recurring masters, the real range check —
+        # Restrict() does not reliably filter those by date, verified live:
+        # masters years outside the range still pass through when
+        # IncludeRecurrences is left off).
+        if ev_start > end_dt:
+            continue
+        if ev_end is not None and ev_end <= start_dt:
+            continue
+        if ev_end is None and ev_start < start_dt:
+            continue
         if len(results) >= limit:
+            truncated = True
             break
+        results.append(_event_summary(ev))
 
     return {
         "start": start_dt.isoformat(),
         "end": end_dt.isoformat(),
         "count": len(results),
         "items": results,
+        "truncated": truncated,
     }
 
 

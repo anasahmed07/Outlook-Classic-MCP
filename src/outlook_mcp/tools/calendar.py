@@ -35,7 +35,12 @@ def register(mcp, bridge) -> None:
         include_recurrences: Annotated[bool, Field()] = True,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
     ) -> CallToolResult:
-        """List calendar events in a date range, including recurring instances."""
+        """List calendar events in a date range, including recurring instances.
+
+        Filters by overlap with [start, end), so multi-day/all-day events that
+        started earlier are included. Response includes "truncated": true if
+        more matching events exist beyond `limit`.
+        """
         data = await bridge.call(
             cal_client.list_events,
             start=start,
