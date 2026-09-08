@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import pathlib
 import queue
 import subprocess
+import tempfile
 import threading
 import time
 from typing import Any, Callable
@@ -31,7 +34,24 @@ logger = logging.getLogger("outlook_mcp.bridge")
 # `_ATTACH_TIMEOUT_SEC`; the main thread waits slightly longer in start().
 _ATTACH_TIMEOUT_SEC = 60
 _READY_TIMEOUT_SEC = _ATTACH_TIMEOUT_SEC + 5
-_CALL_TIMEOUT_SEC = 60
+# The MCP client (or a remote-device bridge layered above us, e.g.
+# "Device did not respond within 60s") imposes its own hard timeout on a
+# tool call that we don't control and can't extend. It's observed to be
+# ~60s, so _CALL_TIMEOUT_SEC must stay safely under that: waiting past it
+# only means we'd finish after the caller already gave up and reported
+# failure — better to fail fast with a clear, actionable error. The COM
+# thread keeps working in the background regardless, so a follow-up call
+# from the client succeeds quickly once Outlook is back.
+_CALL_TIMEOUT_SEC = 45
+
+# Multiple outlook_mcp processes (e.g. separate desktop-chat and Cowork/
+# Code lanes) each run their own bridge against the same Outlook install.
+# If Outlook dies, each notices independently and tries to relaunch it;
+# without coordination they race during the fragile profile-load window.
+# A named mutex serializes the actual launch across processes, and this
+# on-disk cooldown skips relaunching again if another process just did.
+_RELAUNCH_MUTEX_NAME = "Global\\outlook_mcp_relaunch"
+_RELAUNCH_COOLDOWN_SEC = 30.0
 
 
 def _find_outlook_exe() -> str | None:
@@ -80,6 +100,60 @@ def _launch_outlook() -> bool:
         return False
 
 
+def _relaunch_stamp_path() -> pathlib.Path:
+    base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+    return pathlib.Path(base) / "outlook_mcp" / "relaunch.stamp"
+
+
+def _recently_relaunched() -> bool:
+    try:
+        age = time.time() - _relaunch_stamp_path().stat().st_mtime
+        return age < _RELAUNCH_COOLDOWN_SEC
+    except OSError:
+        return False
+
+
+def _mark_relaunched() -> None:
+    try:
+        path = _relaunch_stamp_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(time.time()))
+    except OSError:
+        pass
+
+
+def _launch_outlook_coordinated() -> bool:
+    """Relaunch Outlook, serialized across every outlook_mcp process.
+
+    Falls back to an uncoordinated launch if win32event isn't importable
+    for some reason — better to risk a double-launch than not launch at
+    all.
+    """
+    try:
+        import win32event
+    except ImportError:
+        return _launch_outlook()
+
+    mutex = win32event.CreateMutex(None, False, _RELAUNCH_MUTEX_NAME)
+    try:
+        acquired = win32event.WaitForSingleObject(mutex, 5000) in (
+            win32event.WAIT_OBJECT_0,
+            win32event.WAIT_ABANDONED,
+        )
+        if not acquired:
+            logger.info("Another process is already coordinating an Outlook relaunch — skipping")
+            return False
+        if _recently_relaunched():
+            logger.info("Outlook was relaunched by another process moments ago — skipping")
+            return False
+        launched = _launch_outlook()
+        if launched:
+            _mark_relaunched()
+        return launched
+    finally:
+        win32event.ReleaseMutex(mutex)
+
+
 class OutlookBridge:
     """Owns the COM thread and dispatches work to it."""
 
@@ -89,7 +163,7 @@ class OutlookBridge:
         self._ready = threading.Event()
         self._shutdown = threading.Event()
         # Set while the COM thread is re-attaching after Outlook died, so
-        # call() knows to extend its wait instead of timing out.
+        # call() can give a more specific error than a generic timeout.
         self._reconnecting = threading.Event()
         self._init_error: BaseException | None = None
         self._outlook: Any = None
@@ -171,7 +245,7 @@ class OutlookBridge:
                         stage,
                         exc,
                     )
-                    _launch_outlook()
+                    _launch_outlook_coordinated()
                     launched = True
                 time.sleep(1.5)
 
@@ -259,15 +333,20 @@ class OutlookBridge:
         signaled = await loop.run_in_executor(
             None, lambda: done.wait(timeout=_CALL_TIMEOUT_SEC)
         )
-        if not signaled and self._reconnecting.is_set():
-            # Outlook died mid-call and the COM thread is re-attaching
-            # (possibly cold-launching OUTLOOK.EXE, which takes 15-25s).
-            # Give the reconnect+retry a chance instead of timing out.
-            logger.info("Call is waiting on an Outlook reconnect — extending timeout")
-            signaled = await loop.run_in_executor(
-                None, lambda: done.wait(timeout=_ATTACH_TIMEOUT_SEC + 10)
-            )
         if not signaled:
+            # Deliberately not waiting any longer here: a client/device
+            # bridge above us enforces its own ~60s hard timeout that we
+            # can't extend, so waiting past _CALL_TIMEOUT_SEC would only
+            # mean finishing after that caller already gave up. The COM
+            # thread keeps running this call (and reconnecting if needed)
+            # in the background regardless — a retry from the client
+            # should succeed quickly once it catches up.
+            if self._reconnecting.is_set():
+                raise TimeoutError(
+                    "Outlook lost its connection and is reconnecting "
+                    "(a cold relaunch can take up to a minute). Still "
+                    "working in the background — retry in a few seconds."
+                )
             raise TimeoutError(
                 f"Outlook operation timed out after {_CALL_TIMEOUT_SEC}s. "
                 "Outlook may be waiting on a dialog (security prompt, "

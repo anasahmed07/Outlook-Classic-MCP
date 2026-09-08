@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -94,3 +95,50 @@ def test_error_surfaces_when_reattach_fails(bridge, monkeypatch):
 
     with pytest.raises(RuntimeError, match="could not be relaunched"):
         asyncio.run(bridge.call(dies))
+
+
+def test_call_fails_fast_instead_of_extending_past_client_timeout(bridge, monkeypatch):
+    """call() must not wait past its own timeout even mid-reconnect.
+
+    A client/device bridge above us enforces its own hard timeout we
+    can't extend (observed as "Device did not respond within 60s"), so
+    waiting longer here would only mean finishing after that caller
+    already gave up. It should fail fast with a specific message instead.
+    """
+    import outlook_mcp.bridge as bridge_mod
+
+    monkeypatch.setattr(bridge_mod, "_CALL_TIMEOUT_SEC", 0.05)
+
+    def slow(outlook, namespace):
+        time.sleep(0.5)
+        return "late"
+
+    bridge._reconnecting.set()
+    start = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError, match="reconnecting"):
+            asyncio.run(bridge.call(slow))
+    finally:
+        bridge._reconnecting.clear()
+    # Failed at ~_CALL_TIMEOUT_SEC, not after waiting for `slow` to finish.
+    assert time.monotonic() - start < 0.3
+    time.sleep(0.6)  # let the background call actually finish before teardown
+
+
+def test_launch_outlook_coordinated_respects_cooldown(monkeypatch, tmp_path):
+    """A second relaunch within the cooldown window is skipped.
+
+    Simulates what happens across two outlook_mcp processes (separate
+    desktop-chat and Cowork/Code lanes) racing to relaunch Outlook after
+    it dies — only the first should actually spawn OUTLOOK.EXE.
+    """
+    import outlook_mcp.bridge as bridge_mod
+
+    monkeypatch.setattr(bridge_mod, "_relaunch_stamp_path", lambda: tmp_path / "relaunch.stamp")
+    calls: list[int] = []
+    monkeypatch.setattr(bridge_mod, "_launch_outlook", lambda: (calls.append(1), True)[1])
+
+    assert bridge_mod._launch_outlook_coordinated() is True
+    assert len(calls) == 1
+    assert bridge_mod._launch_outlook_coordinated() is False
+    assert len(calls) == 1
