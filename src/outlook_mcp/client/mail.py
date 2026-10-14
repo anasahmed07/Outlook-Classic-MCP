@@ -17,7 +17,7 @@ from outlook_mcp.constants import (
     OL_MAIL_ITEM,
 )
 from outlook_mcp.errors import OutlookError
-from outlook_mcp.utils.formatting import from_iso, to_iso, truncate
+from outlook_mcp.utils.formatting import from_iso, to_dasl_date, to_iso, truncate
 from outlook_mcp.utils.paths import validate_attachment_path, validate_output_dir
 from outlook_mcp.utils.safety import safe_dasl
 
@@ -75,22 +75,21 @@ def _mail_summary(item: Any) -> dict[str, Any]:
     }
 
 
+def _attachment_name(att: Any, index: int) -> Any:
+    for prop in ("FileName", "DisplayName"):
+        value = _safe_get(att, prop)
+        if value:
+            return value
+    return f"(attachment {index}, name unavailable)"
+
+
 def _mail_full(
     item: Any,
     include_body: bool = True,
     include_html: bool = False,
     max_body_chars: int = 10000,
+    include_attachments: bool = True,
 ) -> dict[str, Any]:
-    attachments = []
-    if _safe_get(item, "Attachments"):
-        for i, att in enumerate(item.Attachments, start=1):
-            attachments.append(
-                {
-                    "index": i,
-                    "filename": att.FileName,
-                    "size_bytes": _safe_get(att, "Size"),
-                }
-            )
     result = {
         "entry_id": _safe_get(item, "EntryID"),
         "conversation_id": _safe_get(item, "ConversationID"),
@@ -106,8 +105,32 @@ def _mail_full(
         "flagged": _safe_get(item, "FlagStatus") == 2,  # olFlagMarked
         "importance": _safe_get(item, "Importance"),
         "categories": _safe_get(item, "Categories", ""),
-        "attachments": attachments,
     }
+    if include_attachments:
+        # Enumerating attachments and reading each one's properties is the
+        # slowest and most crash-prone part of fetching a mail: some
+        # attachment types (embedded .msg items, OLE objects) raise a
+        # com_error on FileName/Size (verified live), which used to fail
+        # the whole call even though the body was perfectly readable.
+        # _attachment_name()/_safe_get() below fall back instead of raising.
+        attachments = []
+        raw_attachments = _safe_get(item, "Attachments")
+        if raw_attachments:
+            for i, att in enumerate(raw_attachments, start=1):
+                attachments.append(
+                    {
+                        "index": i,
+                        "filename": _attachment_name(att, i),
+                        "size_bytes": _safe_get(att, "Size"),
+                    }
+                )
+        result["attachments"] = attachments
+        result["attachment_count"] = len(attachments)
+    else:
+        # Skip Attachments entirely (not even .Count) so callers that
+        # don't need attachments (bulk summarizing/searching) never pay
+        # for the riskiest COM traffic in this call.
+        result["attachments"] = None
     if include_body:
         body = _safe_get(item, "Body", "") or ""
         if max_body_chars and len(body) > max_body_chars:
@@ -144,15 +167,25 @@ def list_mails(
         clauses.append("[UnRead] = True")
     since_dt = from_iso(since)
     until_dt = from_iso(until)
-    # Jet filter dates must be 12-hour + AM/PM; %H with %p would emit
-    # e.g. "14:30 PM", which Outlook misparses for afternoon times.
+    # DASL property query (locale-independent ISO dates) instead of a plain
+    # "[ReceivedTime] >= 'mm/dd/yyyy ...'" Jet literal, which Outlook parses
+    # using the Windows regional short-date order — on a non-US locale that
+    # silently swaps day/month and matches the wrong emails (verified live).
     if since_dt:
-        clauses.append(f"[ReceivedTime] >= '{since_dt.strftime('%m/%d/%Y %I:%M %p')}'")
+        clauses.append(f"\"urn:schemas:httpmail:datereceived\" >= '{to_dasl_date(since_dt)}'")
     if until_dt:
-        clauses.append(f"[ReceivedTime] <= '{until_dt.strftime('%m/%d/%Y %I:%M %p')}'")
+        clauses.append(f"\"urn:schemas:httpmail:datereceived\" <= '{to_dasl_date(until_dt)}'")
 
     if clauses:
-        items = items.Restrict(" AND ".join(clauses))
+        # unread_only's plain "[UnRead] = True" clause can't share an @SQL=
+        # DASL restrict with the datereceived clauses above, so split them
+        # into two Restrict() calls instead of one mixed-syntax string.
+        plain = [c for c in clauses if not c.startswith('"urn:')]
+        dasl = [c for c in clauses if c.startswith('"urn:')]
+        if plain:
+            items = items.Restrict(" AND ".join(plain))
+        if dasl:
+            items = items.Restrict("@SQL=" + " AND ".join(dasl))
 
     from_lower = from_address.lower() if from_address else None
     results: list[dict[str, Any]] = []
@@ -252,12 +285,14 @@ def get_mail(
     include_body: bool = True,
     include_html: bool = False,
     max_body_chars: int = 10000,
+    include_attachments: bool = True,
 ) -> dict[str, Any]:
     return _mail_full(
         get_item_by_id(namespace, entry_id),
         include_body=include_body,
         include_html=include_html,
         max_body_chars=max_body_chars,
+        include_attachments=include_attachments,
     )
 
 

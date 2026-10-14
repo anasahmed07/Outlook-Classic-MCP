@@ -68,6 +68,20 @@ def from_iso(value: str | None) -> dt.datetime | None:
     return parsed
 
 
+def to_dasl_date(value: dt.datetime) -> str:
+    """Format a datetime for a DASL (@SQL=) Restrict() literal.
+
+    Plain Jet/SQL Restrict() literals (e.g. "[Start] >= '09/08/2026 ...'")
+    are parsed using the *Windows regional short-date order*, not a fixed
+    US format — on a non-US locale (e.g. Dutch, day/month) this silently
+    swaps day and month whenever both are <= 12, shifting the filter to
+    the wrong dates without any error. DASL property queries against
+    "urn:schemas:..." accept unambiguous ISO-ordered dates instead, so
+    filtering by those property URNs sidesteps the locale dependency.
+    """
+    return value.strftime("%Y-%m-%d %H:%M")
+
+
 def format_response(data: Any, fmt: ResponseFormat | str) -> str:
     if isinstance(fmt, str):
         fmt = ResponseFormat(fmt)
