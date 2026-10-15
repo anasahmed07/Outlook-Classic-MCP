@@ -75,6 +75,40 @@ def test_non_disconnect_errors_are_not_retried(bridge):
     assert len(attempts) == 1
 
 
+def test_reconnects_when_stale_proxy_raises_bare_attribute_error(bridge):
+    # Outlook restarted under us: pywin32's dynamic __getattr__ swallows the
+    # RPC error and raises a bare AttributeError. The raw IDispatch probe
+    # still reports the disconnect, so the bridge must re-attach.
+    def dead_get_ids(name):
+        raise _rpc_unavailable()
+
+    bridge._namespace._oleobj_ = SimpleNamespace(GetIDsOfNames=dead_get_ids)
+    attempts = []
+
+    def stale(outlook, namespace):
+        attempts.append(namespace)
+        if len(attempts) == 1:
+            raise AttributeError("GetNamespace.GetDefaultFolder")
+        return "recovered"
+
+    assert asyncio.run(bridge.call(stale)) == "recovered"
+    assert len(attempts) == 2
+    assert attempts[0] is not attempts[1]
+
+
+def test_attribute_error_on_live_proxy_is_not_retried(bridge):
+    bridge._namespace._oleobj_ = SimpleNamespace(GetIDsOfNames=lambda name: 1)
+    attempts = []
+
+    def typo(outlook, namespace):
+        attempts.append(1)
+        raise AttributeError("GetNamespace.NoSuchThing")
+
+    with pytest.raises(AttributeError):
+        asyncio.run(bridge.call(typo))
+    assert len(attempts) == 1
+
+
 def test_error_surfaces_when_reattach_fails(bridge, monkeypatch):
     from win32com.client import dynamic
 
