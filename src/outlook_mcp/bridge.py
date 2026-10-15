@@ -195,7 +195,9 @@ class OutlookBridge:
             holder["value"] = func(self._outlook, self._namespace, *args, **kwargs)
             return
         except BaseException as exc:  # noqa: BLE001 - propagated to caller
-            if self._shutdown.is_set() or not is_disconnect_error(exc):
+            if self._shutdown.is_set() or not (
+                is_disconnect_error(exc) or self._connection_lost()
+            ):
                 holder["error"] = exc
                 return
             logger.warning(
@@ -220,6 +222,24 @@ class OutlookBridge:
             holder["value"] = func(self._outlook, self._namespace, *args, **kwargs)
         except BaseException as exc:  # noqa: BLE001 - propagated to caller
             holder["error"] = exc
+
+    def _connection_lost(self) -> bool:
+        """Probe the cached namespace proxy for a dead Outlook. COM thread only.
+
+        A stale proxy doesn't always surface as a disconnect HRESULT:
+        pywin32's dynamic ``__getattr__`` swallows the ``com_error`` from
+        ``GetIDsOfNames`` and raises a bare ``AttributeError`` such as
+        ``GetNamespace.GetDefaultFolder`` with no cause chain. So after any
+        failure, ask the raw ``IDispatch`` directly — it raises the real
+        RPC error if Outlook was closed or restarted under us.
+        """
+        if self._namespace is None:
+            return True
+        try:
+            self._namespace._oleobj_.GetIDsOfNames("CurrentUser")
+        except BaseException as exc:  # noqa: BLE001
+            return is_disconnect_error(exc)
+        return False
 
     def _run(self) -> None:
         import pythoncom
