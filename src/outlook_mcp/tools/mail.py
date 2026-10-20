@@ -129,6 +129,18 @@ def register(mcp, bridge) -> None:
                 description="Truncate the body beyond this many chars (0 = no limit).",
             ),
         ] = 10000,
+        include_attachments: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Include the attachment list (filename/size per attachment). "
+                    "Off for bulk reads that don't need attachments — it's the "
+                    "slowest and most crash-prone part of fetching a mail. When "
+                    "False, 'attachments' is null and Attachments isn't touched "
+                    "at all (no attachment_count either)."
+                ),
+            ),
+        ] = True,
         response_format: Annotated[str, Field(description="'markdown' or 'json'.")] = "markdown",
     ) -> CallToolResult:
         """Fetch body, headers, and attachment list for one mail item.
@@ -142,6 +154,7 @@ def register(mcp, bridge) -> None:
             include_body=include_body,
             include_html=include_html,
             max_body_chars=max_body_chars,
+            include_attachments=include_attachments,
         )
         return ui_result(format_response(data, response_format), data)
 
