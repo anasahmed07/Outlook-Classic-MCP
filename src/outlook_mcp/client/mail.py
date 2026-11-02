@@ -293,6 +293,12 @@ def send_mail(
     for raw_path in attachments or []:
         mail.Attachments.Add(validate_attachment_path(raw_path))
 
+    # Resolve before saving: a draft saved with unresolved recipients has no
+    # address on them. Classic Outlook resolves again at send time, but new
+    # Outlook / OWA rewrites them as name-only on first edit and the send
+    # then fails with "This message wasn't sent" (verified live).
+    mail.Recipients.ResolveAll()
+
     if save_only:
         mail.Save()
         return {
