@@ -177,6 +177,16 @@ def register(mcp, bridge) -> None:
                 )
             ),
         ] = None,
+        signature: Annotated[
+            bool,
+            Field(
+                description=(
+                    "If true, append the sender account's default Outlook signature "
+                    "(HTML) below the body. Requires a default signature for new "
+                    "messages to be set for that account in Outlook."
+                )
+            ),
+        ] = False,
     ) -> str:
         """Compose and send a new mail. Set save_only=True to save to Drafts."""
         data = await bridge.call(
@@ -191,6 +201,7 @@ def register(mcp, bridge) -> None:
             importance=importance,
             save_only=save_only,
             account=account,
+            signature=signature,
         )
         return format_response(data, "json")
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ntpath
 import os
+import re
+from html import escape as _html_escape
 from typing import Any
 
 from outlook_mcp.client.folders import _safe_get, get_item_by_id, resolve_folder
@@ -297,6 +299,7 @@ def send_mail(
     importance: str = "normal",
     save_only: bool = False,
     account: str | None = None,
+    signature: bool = False,
 ) -> dict[str, Any]:
     if account:
         acc = find_account(outlook, account)
@@ -313,7 +316,24 @@ def send_mail(
     if bcc:
         mail.BCC = "; ".join(bcc)
     mail.Subject = subject
-    if html:
+    if signature:
+        # Outlook only inserts the default signature once the item's inspector
+        # has been created. Touch it, then put our body above the signature.
+        mail.BodyFormat = OL_FORMAT_HTML
+        _ = mail.GetInspector
+        existing = mail.HTMLBody or ""
+        if html:
+            new_html = body
+        else:
+            new_html = "<br>".join(_html_escape(line) for line in body.splitlines())
+        match = re.search(r"<body[^>]*>", existing, re.IGNORECASE)
+        if match:
+            mail.HTMLBody = (
+                existing[: match.end()] + new_html + "<br><br>" + existing[match.end() :]
+            )
+        else:
+            mail.HTMLBody = new_html + "<br><br>" + existing
+    elif html:
         mail.BodyFormat = OL_FORMAT_HTML
         mail.HTMLBody = body
     else:
