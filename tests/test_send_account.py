@@ -64,3 +64,24 @@ def test_send_mail_without_account_uses_default_profile():
     outlook, _ = _fake_outlook(["a@x.com"])
     send_mail(outlook, MagicMock(), to=["g@y.com"], subject="s", body="b", save_only=True)
     outlook.CreateItem.assert_called_once()
+
+
+def test_send_with_signature_closes_inspector_and_sends_reloaded_item(monkeypatch):
+    from outlook_mcp.client import mail as mail_mod
+
+    outlook, accounts = _fake_outlook(["info@hotel.com"])
+    draft = MagicMock()
+    draft.HTMLBody = "<html><body><p>SIG</p></body></html>"
+    draft.EntryID, draft.Parent.StoreID = "E1", "S1"
+    accounts[0].DeliveryStore.GetDefaultFolder.return_value.Items.Add.return_value = draft
+    reloaded = MagicMock()
+    monkeypatch.setattr(mail_mod, "get_item_by_id", lambda ns, eid, sid=None: reloaded)
+
+    mail_mod.send_mail(outlook, MagicMock(), to=["g@y.com"], subject="s", body="Hallo",
+                       account="info@hotel.com", signature=True)
+
+    draft.Save.assert_called_once()
+    draft.GetInspector.Close.assert_called_once_with(0)
+    draft.Send.assert_not_called()
+    reloaded.Send.assert_called_once()
+    assert "Hallo" in draft.HTMLBody and "SIG" in draft.HTMLBody

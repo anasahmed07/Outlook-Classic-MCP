@@ -33,6 +33,9 @@ WINDOWS_RESERVED_DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", "CLOCK$"} | {
 # is an EX:/O=... distinguished name).
 SMTP_PROPTAG = "http://schemas.microsoft.com/mapi/proptag/0x5D02001F"
 
+# OlInspectorClose.olSave
+OL_INSPECTOR_SAVE = 0
+
 
 def split_search_words(query: str) -> tuple[str, list[str]]:
     """Split a search query into (anchor, remaining_words), lowercased.
@@ -316,11 +319,13 @@ def send_mail(
     if bcc:
         mail.BCC = "; ".join(bcc)
     mail.Subject = subject
+    inspector = None
     if signature:
         # Outlook only inserts the default signature once the item's inspector
-        # has been created. Touch it, then put our body above the signature.
+        # has been created. Keep a reference: the hidden inspector has to be
+        # closed again before the item can be sent (see below).
         mail.BodyFormat = OL_FORMAT_HTML
-        _ = mail.GetInspector
+        inspector = mail.GetInspector
         existing = mail.HTMLBody or ""
         if html:
             new_html = body
@@ -343,6 +348,16 @@ def send_mail(
 
     for raw_path in attachments or []:
         mail.Attachments.Add(validate_attachment_path(raw_path))
+
+    if inspector is not None:
+        # Calling Send() while a never-displayed inspector is still attached
+        # fails with E_INVALIDARG (0x80070057, "parameter is incorrect").
+        # Save, close the inspector, then reload the item fresh from its store.
+        mail.Save()
+        entry_id, store_id = mail.EntryID, mail.Parent.StoreID
+        inspector.Close(OL_INSPECTOR_SAVE)
+        inspector = None
+        mail = get_item_by_id(namespace, entry_id, store_id)
 
     if save_only:
         mail.Save()
