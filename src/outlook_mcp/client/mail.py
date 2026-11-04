@@ -14,6 +14,7 @@ from outlook_mcp.constants import (
     OL_FORMAT_HTML,
     OL_FORMAT_PLAIN,
     OL_IMPORTANCE_NORMAL,
+    OL_FOLDER_DRAFTS,
     OL_MAIL_ITEM,
 )
 from outlook_mcp.errors import OutlookError
@@ -261,6 +262,27 @@ def get_mail(
     )
 
 
+def find_account(outlook: Any, account: str) -> Any:
+    """Return the Outlook Account whose SMTP address or display name matches.
+
+    Matching is case-insensitive. Raises OutlookError listing the available
+    accounts if nothing matches.
+    """
+    wanted = account.strip().lower()
+    accounts = outlook.Session.Accounts
+    available: list[str] = []
+    for i in range(1, accounts.Count + 1):
+        acc = accounts.Item(i)
+        smtp = str(_safe_get(acc, "SmtpAddress", "") or "")
+        display = str(_safe_get(acc, "DisplayName", "") or "")
+        available.append(smtp or display)
+        if wanted in (smtp.lower(), display.lower()):
+            return acc
+    raise OutlookError(
+        f"Account '{account}' not found. Available accounts: {', '.join(available) or 'none'}"
+    )
+
+
 def send_mail(
     outlook: Any,
     namespace: Any,
@@ -274,8 +296,17 @@ def send_mail(
     attachments: list[str] | None = None,
     importance: str = "normal",
     save_only: bool = False,
+    account: str | None = None,
 ) -> dict[str, Any]:
-    mail = outlook.CreateItem(OL_MAIL_ITEM)
+    if account:
+        acc = find_account(outlook, account)
+        # Create the item inside the account's own Drafts folder so that a
+        # saved draft lands in that mailbox, not in the default profile's.
+        drafts = acc.DeliveryStore.GetDefaultFolder(OL_FOLDER_DRAFTS)
+        mail = drafts.Items.Add(OL_MAIL_ITEM)
+        mail.SendUsingAccount = acc
+    else:
+        mail = outlook.CreateItem(OL_MAIL_ITEM)
     mail.To = "; ".join(to)
     if cc:
         mail.CC = "; ".join(cc)
