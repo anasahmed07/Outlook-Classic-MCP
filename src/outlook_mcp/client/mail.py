@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ntpath
 import os
+import re
+from html import escape as _html_escape
 from typing import Any
 
 from outlook_mcp.client.folders import _safe_get, get_item_by_id, resolve_folder
@@ -14,6 +16,7 @@ from outlook_mcp.constants import (
     OL_FORMAT_HTML,
     OL_FORMAT_PLAIN,
     OL_IMPORTANCE_NORMAL,
+    OL_FOLDER_DRAFTS,
     OL_MAIL_ITEM,
 )
 from outlook_mcp.errors import OutlookError
@@ -29,6 +32,9 @@ WINDOWS_RESERVED_DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", "CLOCK$"} | {
 # holds the real SMTP address even for Exchange senders (whose fromemail
 # is an EX:/O=... distinguished name).
 SMTP_PROPTAG = "http://schemas.microsoft.com/mapi/proptag/0x5D02001F"
+
+# OlInspectorClose.olSave
+OL_INSPECTOR_SAVE = 0
 
 
 def split_search_words(query: str) -> tuple[str, list[str]]:
@@ -261,6 +267,27 @@ def get_mail(
     )
 
 
+def find_account(outlook: Any, account: str) -> Any:
+    """Return the Outlook Account whose SMTP address or display name matches.
+
+    Matching is case-insensitive. Raises OutlookError listing the available
+    accounts if nothing matches.
+    """
+    wanted = account.strip().lower()
+    accounts = outlook.Session.Accounts
+    available: list[str] = []
+    for i in range(1, accounts.Count + 1):
+        acc = accounts.Item(i)
+        smtp = str(_safe_get(acc, "SmtpAddress", "") or "")
+        display = str(_safe_get(acc, "DisplayName", "") or "")
+        available.append(smtp or display)
+        if wanted in (smtp.lower(), display.lower()):
+            return acc
+    raise OutlookError(
+        f"Account '{account}' not found. Available accounts: {', '.join(available) or 'none'}"
+    )
+
+
 def send_mail(
     outlook: Any,
     namespace: Any,
@@ -274,15 +301,44 @@ def send_mail(
     attachments: list[str] | None = None,
     importance: str = "normal",
     save_only: bool = False,
+    account: str | None = None,
+    signature: bool = False,
 ) -> dict[str, Any]:
-    mail = outlook.CreateItem(OL_MAIL_ITEM)
+    if account:
+        acc = find_account(outlook, account)
+        # Create the item inside the account's own Drafts folder so that a
+        # saved draft lands in that mailbox, not in the default profile's.
+        drafts = acc.DeliveryStore.GetDefaultFolder(OL_FOLDER_DRAFTS)
+        mail = drafts.Items.Add(OL_MAIL_ITEM)
+        mail.SendUsingAccount = acc
+    else:
+        mail = outlook.CreateItem(OL_MAIL_ITEM)
     mail.To = "; ".join(to)
     if cc:
         mail.CC = "; ".join(cc)
     if bcc:
         mail.BCC = "; ".join(bcc)
     mail.Subject = subject
-    if html:
+    inspector = None
+    if signature:
+        # Outlook only inserts the default signature once the item's inspector
+        # has been created. Keep a reference: the hidden inspector has to be
+        # closed again before the item can be sent (see below).
+        mail.BodyFormat = OL_FORMAT_HTML
+        inspector = mail.GetInspector
+        existing = mail.HTMLBody or ""
+        if html:
+            new_html = body
+        else:
+            new_html = "<br>".join(_html_escape(line) for line in body.splitlines())
+        match = re.search(r"<body[^>]*>", existing, re.IGNORECASE)
+        if match:
+            mail.HTMLBody = (
+                existing[: match.end()] + new_html + "<br><br>" + existing[match.end() :]
+            )
+        else:
+            mail.HTMLBody = new_html + "<br><br>" + existing
+    elif html:
         mail.BodyFormat = OL_FORMAT_HTML
         mail.HTMLBody = body
     else:
@@ -292,6 +348,16 @@ def send_mail(
 
     for raw_path in attachments or []:
         mail.Attachments.Add(validate_attachment_path(raw_path))
+
+    if inspector is not None:
+        # Calling Send() while a never-displayed inspector is still attached
+        # fails with E_INVALIDARG (0x80070057, "parameter is incorrect").
+        # Save, close the inspector, then reload the item fresh from its store.
+        mail.Save()
+        entry_id, store_id = mail.EntryID, mail.Parent.StoreID
+        inspector.Close(OL_INSPECTOR_SAVE)
+        inspector = None
+        mail = get_item_by_id(namespace, entry_id, store_id)
 
     if save_only:
         mail.Save()
