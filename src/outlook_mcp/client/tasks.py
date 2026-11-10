@@ -12,7 +12,7 @@ from outlook_mcp.constants import (
     OL_IMPORTANCE_NORMAL,
     OL_TASK_ITEM,
 )
-from outlook_mcp.utils.formatting import from_iso, to_iso
+from outlook_mcp.utils.formatting import from_iso, to_com, to_iso
 
 
 def _task_summary(t: Any) -> dict[str, Any]:
@@ -63,13 +63,13 @@ def create_task(
     task = outlook.CreateItem(OL_TASK_ITEM)
     task.Subject = subject
     if due_date:
-        task.DueDate = from_iso(due_date)
+        task.DueDate = to_com(from_iso(due_date))
     if body:
         task.Body = body
     task.Importance = IMPORTANCE_MAP.get(importance.lower(), OL_IMPORTANCE_NORMAL)
     if reminder:
         task.ReminderSet = True
-        task.ReminderTime = from_iso(reminder)
+        task.ReminderTime = to_com(from_iso(reminder))
     task.Save()
     return {"status": "created", "entry_id": task.EntryID, "subject": task.Subject}
 
