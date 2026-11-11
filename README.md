@@ -1,13 +1,11 @@
-# outlook-classic-mcp
-
 ![outlook-classic-mcp banner](src/public/outlook-classic-mcp-banner.png)
 
-A local **MCP (Model Context Protocol) server** that exposes the **classic
-Outlook desktop client** — mail, folders, calendar, contacts, tasks, color
-categories, mail rules, and Out-of-Office status — to any MCP-aware
-agent: Claude Code, Claude Desktop, Cowork, GitHub Copilot / VS Code
-agent mode, Cursor, Cline, Continue, Windsurf, and anything else that
-speaks MCP.
+# outlook-classic-mcp
+| | |
+| :--- | :--- |
+| [![Outlook Classic MCP server](https://mcprush.com/badge/outlook-classic-mcp/card.svg)](https://mcprush.com/to/outlook-classic-mcp?ref=badge) | A local **MCP (Model Context Protocol) server** that exposes the **classic Outlook desktop client** — mail, folders, calendar, contacts, tasks, color categories, mail rules, and Out-of-Office status — to any MCP-aware agent: Claude Code, Claude Desktop, Cowork, GitHub Copilot / VS Code agent mode, Cursor, Cline, Continue, Windsurf, and anything else that speaks MCP. |
+
+
 
 It talks to Outlook's COM API on Windows via `pywin32`, the same path
 macros and Office add-ins use. Authentication piggybacks on whatever
