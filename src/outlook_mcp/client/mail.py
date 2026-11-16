@@ -377,6 +377,29 @@ def send_mail(
     }
 
 
+def _prepend_text(item: Any, text: str) -> None:
+    """Put ``text`` above the existing content of a reply/forward draft.
+
+    Assigning to ``Body`` flattens the whole item to plain text, which turns
+    the signature and the quoted original into raw text (links shown as
+    ``<https://...>``). So for HTML/RTF items, insert the text into the HTML
+    body instead. Plain-text items have no formatting to lose and keep the
+    simple path.
+    """
+    if item.BodyFormat == OL_FORMAT_PLAIN:
+        item.Body = text + "\n\n" + (item.Body or "")
+        return
+    new_html = "<br>".join(_html_escape(line) for line in text.splitlines())
+    existing = item.HTMLBody or ""
+    match = re.search(r"<body[^>]*>", existing, re.IGNORECASE)
+    if match:
+        item.HTMLBody = (
+            existing[: match.end()] + new_html + "<br><br>" + existing[match.end() :]
+        )
+    else:
+        item.HTMLBody = new_html + "<br><br>" + existing
+
+
 def reply_mail(
     outlook: Any,
     namespace: Any,
@@ -393,7 +416,7 @@ def reply_mail(
         reply.BodyFormat = OL_FORMAT_HTML
         reply.HTMLBody = body + (reply.HTMLBody or "")
     else:
-        reply.Body = body + "\n\n" + (reply.Body or "")
+        _prepend_text(reply, body)
     for raw_path in attachments or []:
         reply.Attachments.Add(validate_attachment_path(raw_path))
     # Cache properties BEFORE Send(): once the reply is sent, the underlying
@@ -431,7 +454,7 @@ def forward_mail(
             fwd.BodyFormat = OL_FORMAT_HTML
             fwd.HTMLBody = body + (fwd.HTMLBody or "")
         else:
-            fwd.Body = body + "\n\n" + (fwd.Body or "")
+            _prepend_text(fwd, body)
     # Cache properties BEFORE Send(): once the forward is sent, the underlying
     # COM object has effectively moved from Drafts to Sent Items and reading
     # any of its properties raises a "item has been moved or deleted" COM
