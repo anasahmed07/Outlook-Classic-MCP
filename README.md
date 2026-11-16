@@ -131,6 +131,15 @@ server entry in its MCP config:
 | Out-of-Office  | `get_out_of_office` |
 | Account        | `whoami` — sanity check; shows the bound mailbox |
 
+`send_mail`, `reply_mail` and `forward_mail` send immediately by default. Pass
+`save_only=true` to save the message to Drafts instead and review it in Outlook
+first.
+
+**Drafts-only mode.** Set `OUTLOOK_MCP_DRAFTS_ONLY=1` in the server's environment
+(for example in the `env` block of your MCP client config) to make all three
+tools save to Drafts regardless of `save_only`. Nothing is sent through the
+server; you review and send from Outlook yourself. Off by default.
+
 ---
 
 ## MCP Apps — interactive UI in the chat
