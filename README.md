@@ -222,6 +222,11 @@ absolute and under the user profile (default sandbox). Set
 `OUTLOOK_MCP_ALLOW_ANY_PATH=1` to disable the sandbox if you legitimately
 need to read or write outside `%USERPROFILE%`.
 
+**Interactive cards.** In clients that support MCP Apps, the list/search/get tools
+open an interactive card. Set `OUTLOOK_MCP_UI=off` in the server's environment to
+turn this off: the tools then return plain text only, and `outlook_show_mails` /
+`outlook_show_mail` open the mail cards on request. On by default.
+
 ---
 
 ## Architecture

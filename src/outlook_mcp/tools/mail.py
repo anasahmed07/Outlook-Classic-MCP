@@ -8,7 +8,7 @@ from mcp.types import CallToolResult
 from pydantic import Field
 
 from outlook_mcp.client import mail as mail_client
-from outlook_mcp.ui import ui_meta, ui_result
+from outlook_mcp.ui import ui_enabled, ui_meta, ui_result
 from outlook_mcp.utils.formatting import format_response
 from outlook_mcp.utils.safety import safe_call
 
@@ -144,6 +144,71 @@ def register(mcp, bridge) -> None:
             max_body_chars=max_body_chars,
         )
         return ui_result(format_response(data, response_format), data)
+
+    if not ui_enabled():
+        # Cards are off by default-in-this-config; expose explicit tools that
+        # render them only when the user asks to *see* the interactive view.
+        _show_annotations = {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+
+        @mcp.tool(
+            name="outlook_show_mails",
+            annotations={"title": "Show Outlook mail list card", **_show_annotations},
+            meta=ui_meta("mail-list", force=True),
+            structured_output=False,
+        )
+        @safe_call
+        async def outlook_show_mails(
+            folder: Annotated[str, Field(description="Folder name or path.")] = "inbox",
+            limit: Annotated[int, Field(ge=1, le=100, description="Max items.")] = 25,
+            unread_only: Annotated[bool, Field(description="Return only unread.")] = False,
+        ) -> CallToolResult:
+            """Show the interactive Outlook mail list as a card (widget).
+
+            Use this whenever the user asks to see, show or open their inbox or
+            a mail list as a card, widget or interactive view. For a plain text
+            list, use outlook_list_mails instead.
+            """
+            data = await bridge.call(
+                mail_client.list_mails,
+                folder=folder,
+                limit=limit,
+                offset=0,
+                unread_only=unread_only,
+                since=None,
+                until=None,
+                from_address=None,
+            )
+            return ui_result(format_response(data, "markdown"), data)
+
+        @mcp.tool(
+            name="outlook_show_mail",
+            annotations={"title": "Show Outlook mail reader card", **_show_annotations},
+            meta=ui_meta("mail-view", force=True),
+            structured_output=False,
+        )
+        @safe_call
+        async def outlook_show_mail(
+            entry_id: Annotated[str, Field(min_length=1, description="EntryID of the mail item.")],
+        ) -> CallToolResult:
+            """Show one mail in the interactive Outlook reader card (widget).
+
+            Use this whenever the user asks to see, show or open a mail as a
+            card, widget or interactive view. To read the text of a mail, use
+            outlook_get_mail instead.
+            """
+            data = await bridge.call(
+                mail_client.get_mail,
+                entry_id=entry_id,
+                include_body=True,
+                include_html=False,
+                max_body_chars=10000,
+            )
+            return ui_result(format_response(data, "markdown"), data)
 
     @mcp.tool(
         name="outlook_send_mail",

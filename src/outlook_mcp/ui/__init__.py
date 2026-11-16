@@ -19,6 +19,7 @@ blocks external loads by default). The shared bridge + stylesheet live in
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -64,10 +65,26 @@ def view_uri(view: str) -> str:
     return f"ui://outlook/{view}.html"
 
 
-def ui_meta(view: str) -> dict[str, Any]:
-    """``meta=`` value for a tool that renders ``view`` when called."""
+def ui_enabled() -> bool:
+    """False when OUTLOOK_MCP_UI is off/0/false/no: cards never open on their own."""
+    return os.environ.get("OUTLOOK_MCP_UI", "on").strip().lower() not in {
+        "off",
+        "0",
+        "false",
+        "no",
+    }
+
+
+def ui_meta(view: str, force: bool = False) -> dict[str, Any] | None:
+    """``meta=`` value for a tool that renders ``view`` when called.
+
+    Returns None (no card) when OUTLOOK_MCP_UI is off, unless ``force`` is
+    set -- used by the explicit ``outlook_show_*`` tools.
+    """
     if view not in _VIEWS:
         raise ValueError(f"unknown UI view: {view}")
+    if not force and not ui_enabled():
+        return None
     return {"ui": {"resourceUri": view_uri(view)}}
 
 
