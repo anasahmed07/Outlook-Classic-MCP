@@ -386,6 +386,7 @@ def reply_mail(
     reply_all: bool = False,
     html: bool = False,
     attachments: list[str] | None = None,
+    save_only: bool = False,
 ) -> dict[str, Any]:
     original = get_item_by_id(namespace, entry_id)
     reply = original.ReplyAll() if reply_all else original.Reply()
@@ -402,6 +403,15 @@ def reply_mail(
     # error. Surfacing that as a failure causes upstream AI agents to retry
     # and send duplicates, even though the original Send() succeeded.
     reply_subject = reply.Subject
+    if save_only:
+        reply.Save()
+        return {
+            "status": "saved_to_drafts",
+            "reply_all": reply_all,
+            "in_reply_to": entry_id,
+            "entry_id": reply.EntryID,
+            "subject": reply_subject,
+        }
     reply.Send()
     return {
         "status": "sent",
@@ -420,6 +430,7 @@ def forward_mail(
     body: str = "",
     cc: list[str] | None = None,
     html: bool = False,
+    save_only: bool = False,
 ) -> dict[str, Any]:
     original = get_item_by_id(namespace, entry_id)
     fwd = original.Forward()
@@ -438,6 +449,15 @@ def forward_mail(
     # error. Surfacing that as a failure causes upstream AI agents to retry
     # and send duplicates, even though the original Send() succeeded.
     fwd_subject = fwd.Subject
+    if save_only:
+        fwd.Save()
+        return {
+            "status": "saved_to_drafts",
+            "forwarded": entry_id,
+            "to": to,
+            "entry_id": fwd.EntryID,
+            "subject": fwd_subject,
+        }
     fwd.Send()
     return {"status": "sent", "forwarded": entry_id, "to": to, "subject": fwd_subject}
 

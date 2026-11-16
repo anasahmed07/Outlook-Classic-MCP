@@ -222,8 +222,9 @@ def register(mcp, bridge) -> None:
         reply_all: Annotated[bool, Field(description="Reply to all recipients.")] = False,
         html: Annotated[bool, Field(description="Treat body as HTML.")] = False,
         attachments: Annotated[Optional[list[str]], Field(description="Files to attach.")] = None,
+        save_only: Annotated[bool, Field(description="If true, save the reply to Drafts instead of sending.")] = False,
     ) -> str:
-        """Reply (or reply-all) to an existing mail."""
+        """Reply (or reply-all) to an existing mail. Set save_only=True to save to Drafts."""
         data = await bridge.call(
             mail_client.reply_mail,
             entry_id=entry_id,
@@ -231,6 +232,7 @@ def register(mcp, bridge) -> None:
             reply_all=reply_all,
             html=html,
             attachments=attachments,
+            save_only=save_only,
         )
         return format_response(data, "json")
 
@@ -251,8 +253,9 @@ def register(mcp, bridge) -> None:
         body: Annotated[str, Field(description="Optional note above the forwarded mail.")] = "",
         cc: Annotated[Optional[list[str]], Field(description="CC recipients.")] = None,
         html: Annotated[bool, Field(description="Treat body as HTML.")] = False,
+        save_only: Annotated[bool, Field(description="If true, save the forward to Drafts instead of sending.")] = False,
     ) -> str:
-        """Forward an existing mail with an optional added note."""
+        """Forward an existing mail with an optional added note. Set save_only=True to save to Drafts."""
         data = await bridge.call(
             mail_client.forward_mail,
             entry_id=entry_id,
@@ -260,6 +263,7 @@ def register(mcp, bridge) -> None:
             body=body,
             cc=cc,
             html=html,
+            save_only=save_only,
         )
         return format_response(data, "json")
 

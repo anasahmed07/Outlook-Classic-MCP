@@ -131,6 +131,10 @@ server entry in its MCP config:
 | Out-of-Office  | `get_out_of_office` |
 | Account        | `whoami` — sanity check; shows the bound mailbox |
 
+`send_mail`, `reply_mail` and `forward_mail` send immediately by default. Pass
+`save_only=true` to save the message to Drafts instead and review it in Outlook
+first.
+
 ---
 
 ## MCP Apps — interactive UI in the chat
