@@ -66,3 +66,51 @@ def test_forward_default_still_sends(monkeypatch):
     _patch(monkeypatch, item)
     assert mc.forward_mail(None, None, entry_id="x", to=["a@b.c"])["status"] == "sent"
     assert item.sent and not item.saved
+
+
+# ---- OUTLOOK_MCP_DRAFTS_ONLY: nothing is ever sent -------------------------
+
+
+class _Outlook:
+    def __init__(self, item):
+        self._item = item
+
+    def CreateItem(self, _kind):
+        return self._item
+
+
+def test_drafts_only_forces_reply_to_drafts(monkeypatch):
+    monkeypatch.setenv("OUTLOOK_MCP_DRAFTS_ONLY", "1")
+    item = _Item()
+    _patch(monkeypatch, item)
+    out = mc.reply_mail(None, None, entry_id="x", body="hi")  # save_only not passed
+    assert out["status"] == "saved_to_drafts" and "NOT sent" in out["note"]
+    assert item.saved and not item.sent
+
+
+def test_drafts_only_forces_forward_to_drafts(monkeypatch):
+    monkeypatch.setenv("OUTLOOK_MCP_DRAFTS_ONLY", "true")
+    item = _Item()
+    _patch(monkeypatch, item)
+    out = mc.forward_mail(None, None, entry_id="x", to=["a@b.c"], save_only=False)
+    assert out["status"] == "saved_to_drafts" and item.saved and not item.sent
+
+
+def test_drafts_only_forces_send_mail_to_drafts(monkeypatch):
+    monkeypatch.setenv("OUTLOOK_MCP_DRAFTS_ONLY", "yes")
+    item = _Item()
+    out = mc.send_mail(
+        _Outlook(item), None, to=["a@b.c"], subject="s", body="b", save_only=False
+    )
+    assert out["status"] == "saved_to_drafts" and "NOT sent" in out["note"]
+    assert item.saved and not item.sent
+
+
+def test_drafts_only_off_values_still_send(monkeypatch):
+    for value in ("", "0", "off", "no"):
+        monkeypatch.setenv("OUTLOOK_MCP_DRAFTS_ONLY", value)
+        item = _Item()
+        out = mc.send_mail(
+            _Outlook(item), None, to=["a@b.c"], subject="s", body="b"
+        )
+        assert out["status"] == "sent" and item.sent and not item.saved

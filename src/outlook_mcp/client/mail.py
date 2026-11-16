@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ntpath
 import os
+import os
 import re
 from html import escape as _html_escape
 from typing import Any
@@ -288,6 +289,27 @@ def find_account(outlook: Any, account: str) -> Any:
     )
 
 
+def _drafts_only() -> bool:
+    """True when OUTLOOK_MCP_DRAFTS_ONLY is set: nothing is ever sent."""
+    return os.environ.get("OUTLOOK_MCP_DRAFTS_ONLY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _drafts_only_note() -> dict[str, str]:
+    if not _drafts_only():
+        return {}
+    return {
+        "note": (
+            "OUTLOOK_MCP_DRAFTS_ONLY is on: the message was saved to Drafts and "
+            "NOT sent. The user reviews and sends it from Outlook."
+        )
+    }
+
+
 def send_mail(
     outlook: Any,
     namespace: Any,
@@ -304,6 +326,7 @@ def send_mail(
     account: str | None = None,
     signature: bool = False,
 ) -> dict[str, Any]:
+    save_only = save_only or _drafts_only()
     if account:
         acc = find_account(outlook, account)
         # Create the item inside the account's own Drafts folder so that a
@@ -365,6 +388,7 @@ def send_mail(
             "status": "saved_to_drafts",
             "entry_id": mail.EntryID,
             "subject": mail.Subject,
+            **_drafts_only_note(),
         }
 
     mail.Send()
@@ -388,6 +412,7 @@ def reply_mail(
     attachments: list[str] | None = None,
     save_only: bool = False,
 ) -> dict[str, Any]:
+    save_only = save_only or _drafts_only()
     original = get_item_by_id(namespace, entry_id)
     reply = original.ReplyAll() if reply_all else original.Reply()
     if html:
@@ -411,6 +436,7 @@ def reply_mail(
             "in_reply_to": entry_id,
             "entry_id": reply.EntryID,
             "subject": reply_subject,
+            **_drafts_only_note(),
         }
     reply.Send()
     return {
@@ -432,6 +458,7 @@ def forward_mail(
     html: bool = False,
     save_only: bool = False,
 ) -> dict[str, Any]:
+    save_only = save_only or _drafts_only()
     original = get_item_by_id(namespace, entry_id)
     fwd = original.Forward()
     fwd.To = "; ".join(to)
@@ -457,6 +484,7 @@ def forward_mail(
             "to": to,
             "entry_id": fwd.EntryID,
             "subject": fwd_subject,
+            **_drafts_only_note(),
         }
     fwd.Send()
     return {"status": "sent", "forwarded": entry_id, "to": to, "subject": fwd_subject}
