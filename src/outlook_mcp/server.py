@@ -6,7 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from outlook_mcp.bridge import OutlookBridge
 from outlook_mcp.tools import register_all
-from outlook_mcp.ui import register_ui
+from outlook_mcp.ui import register_ui, ui_enabled
 
 INSTRUCTIONS = """\
 This MCP server gives you full access to Microsoft Outlook desktop on
@@ -43,6 +43,15 @@ convert to another timezone. outlook_whoami reports the timezone name
 and current local time.
 """
 
+UI_OFF_INSTRUCTIONS = """\
+
+Interactive cards are turned off (OUTLOOK_MCP_UI=off): the list, search and
+get tools return plain text only. When the user asks to see their mail as a
+card, widget or interactive view, call outlook_show_mails (a mail list) or
+outlook_show_mail (one mail) instead of drawing your own card or widget from
+the text.
+"""
+
 
 def build_server() -> tuple[FastMCP, OutlookBridge]:
     """Construct the FastMCP instance, bridge, and wire all tools.
@@ -50,7 +59,8 @@ def build_server() -> tuple[FastMCP, OutlookBridge]:
     The bridge is *not* started here — entrypoint.main() does that so
     the readiness wait happens after logging is configured.
     """
-    mcp = FastMCP("outlook_mcp", instructions=INSTRUCTIONS)
+    instructions = INSTRUCTIONS if ui_enabled() else INSTRUCTIONS + UI_OFF_INSTRUCTIONS
+    mcp = FastMCP("outlook_mcp", instructions=instructions)
     bridge = OutlookBridge()
     register_all(mcp, bridge)
     register_ui(mcp)
